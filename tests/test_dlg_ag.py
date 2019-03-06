@@ -20,7 +20,7 @@ class TestDlgAg(unittest.TestCase):
         if                      _ONLY_LIST and test_str[5:] not in _ONLY_LIST: return 
         val4edit    = 'Edit me'
         pass;                   log('val4edit={}',(val4edit))
-        def do_acts(name, ag, data=''):
+        def do_acts(ag, name, data=''):
             log('on call {}',name)
             if name=='b1':
                 return    dict(ctrls=[('b1', dict(cap='Renamed'))]  # New cap
@@ -112,15 +112,15 @@ class TestDlgAg(unittest.TestCase):
             act_rd  = tag       if tag in ('mr1','mr2','mr3')   else act_rd
             print('wnen_menu: tag=',tag)
             return None if tag=='m1' else []
-        def do_menu(name, ag, data=''):
+        def do_menu(ag, name, data=''):
             mn_its = [0
     ,dict(cap='&Close dialog'   , tag='m1'  , cmd=wnen_menu)
-    ,dict(cap='&Cmd un'         , tag='m2'  , cmd=wnen_menu             , en=False)
+    ,dict(cap='&Cmd un'         , tag='m2'  , cmd=wnen_menu             , en=False  ,key='Ctrl+Enter')
     ,dict(cap='-')
     ,dict(cap='&Check/mark'     , tag='mc1' , cmd=wnen_menu, mark=('c' if chk else ''))           
-    ,dict(cap='&Check/mark un'  , tag='mc2'                , mark='c'   , en=False)           
+    ,dict(cap='&Check/mark un'  , tag='mc2'                , mark='c'   , en=False  ,key='Ctrl++')           
     ,dict(cap='&Check/ch'       , tag='mc3' , cmd=wnen_menu, ch=chk)           
-    ,dict(cap='&Check/ch un'    , tag='mc4'                , ch=True    , en=False)           
+    ,dict(cap='&Check/ch un'    , tag='mc4'                , ch=True    , en=False  ,key='Ctrl+Shift+C')           
     ,dict(cap='-')
     ,dict(cap='Radio group'                                             , en=False)
     ,dict(cap='&mr1: Select me' , tag='mr1' , cmd=wnen_menu, mark=('r' if act_rd=='mr1' else ''))
@@ -137,9 +137,8 @@ class TestDlgAg(unittest.TestCase):
             where, dx, dy   = ('dxdy', 7+data['x'], 7+data['y']) \
                                 if type(data)==dict else \
                               ('+h', 0, 0)
-            return ag.show_menu(name
-                , mn_its
-                , where, dx, dy
+            return ag.show_menu(mn_its
+                , name, where, dx, dy
                 , repro_to_file='test_ag_menu.py' if where=='dxdy' else ''
             )
         DlgAg(
@@ -147,8 +146,8 @@ class TestDlgAg(unittest.TestCase):
                 ,('b1',dict(tp='bttn'  ,x=0,y=  0   ,w=200          ,cap='RightClick me'
                     ,on_menu=do_menu))
                 ,('m1',dict(tp='memo'  ,x=0,y= 30   ,w=200   ,h=100 ,val='RightClick \nanywhere \ninside me'
-                    ,on_mouse_down=lambda name, ag, data='':
-                        do_menu(name, ag, data) if 1==data['btn'] else 0))
+                    ,on_mouse_down=lambda ag, name, data='':
+                        do_menu(ag, name, data) if 1==data['btn'] else 0))
                   ][1:]
         ,   form=dict(cap=test_str                  ,w=200  ,h=130)
         ,   fid='b1'    # Start focus
