@@ -2,7 +2,7 @@
 Authors:
     Andrey Kvichansky    (kvichans on github.com)
 Version:
-    '0.8.01 2019-02-13'
+    '0.8.02 2019-03-06'
 Content
     See github.com/kvichans/cuda_kv_dlg/wiki
 ToDo: (see end of file)
@@ -63,7 +63,7 @@ REDUCTIONS  = {
     ,'cols': 'columns'
     }
 
-CB_HIDE = lambda name,ag,d='':None     # Control callback to hide dlg
+CB_HIDE = lambda ag,name,d='':None     # Control callback to hide dlg
 
 ALI_CL  = app.ALIGN_CLIENT
 ALI_LF  = app.ALIGN_LEFT
@@ -108,16 +108,27 @@ class DlgAg:
             ed_to_focus.focus()
        #def show
 
+    ###############
+    ## Getters
+    ###############
+    def focused(self, live=True):
+        if not live:    return self.form.get('fid')
+        form    = _dlg_proc(self.did
+                        , app.DLG_PROP_GET)
+        c_ind   = form.get('focused')
+        if not find:    return None
+        c_pr    = _dlg_proc(self.did, app.DLG_CTL_PROP_GET, index=c_ind)
+        if not c_pr:    return None
+        return c_pr['name']
+       #def focused
+    
     def fattr(self, attr, defv=None, live=True):
         """ Return one form property """
-        attr= 'focused' if attr=='fid' else attr
+        if attr in ('focused', 'fid'):  return self.focused(live)
         pr  = _dlg_proc(self.did
                         , app.DLG_PROP_GET)     if live else    self.form
         pass;                  #log('pr={}',(pr))
         rsp = pr.get(attr, defv)
-        if live and attr=='focused':
-            prf = _dlg_proc(self.did, app.DLG_CTL_PROP_GET, index=rsp)
-            rsp = prf['name'] if prf else None
         return rsp
        #def fattr
 
@@ -125,9 +136,17 @@ class DlgAg:
         """ Return form properties """
         pr  = _dlg_proc(self.did
                         , app.DLG_PROP_GET)     if live else    self.form
-        return pr   if not attrs else   {attr:pr.get(attr) for attr in attrs}
+        return pr      if not attrs else \
+               {attr:(self.focused(live) if attr in ('focused', 'fid') else pr.get(attr)) 
+                    for attr in attrs}
        #def fattrs
 
+    def fhandle(self):
+        return self.did
+    
+    def сhandle(self, name):
+        return app.dlg_proc(self.did, app.DLG_CTL_HANDLE, name=name)
+    
     def cattr(self, name, attr, defv=None, live=True):
         """ Return one the control property """
         live= False if attr in ('type', 'p')    else live       # Unchangable
@@ -170,6 +189,10 @@ class DlgAg:
     def chandle(self, name):
         return app.dlg_proc(self.did, app.DLG_CTL_HANDLE, name=name)
 
+
+    ###############
+    ## Updaters
+    ###############
     def update(self, upds):
         """ Update most of dlg props
             upds is dict(ctrls=, form=, vals=, fid=) 
@@ -367,7 +390,7 @@ class DlgAg:
                     if event_val!=data[0]:
                         app.dlg_proc(          idd, app.DLG_CTL_PROP_SET, index=idc, prop={'val':data[0]})
                 pass;          #log('?? u_callbk',())
-                upds    = u_callbk(cid, self, data)
+                upds    = u_callbk(self, cid, data)
                 pass;          #log('ok u_callbk upds={}',(upds))
                 pass;          #log('upds={}',(upds))
                 return self.update(upds)
@@ -382,16 +405,13 @@ class DlgAg:
             c_pr[on_key]    = get_proxy_cb(user_callbk, on_key)
            #for on_key
         
-#       if callable(ccfg.get('menu')):
-#           c_pr['on_menu'] = lambda idd, idc, data: ccfg['menu'](cid, self)
-        
         return c_pr
        #def _prepare_control_prop
 
     def _prep_pos_attrs(self, cnt, cid, ctrls4cid=None):
         pass;                   log4fun=-1== 1  # Order log in the function
         ctrls4cid = ctrls4cid if ctrls4cid else self.ctrls
-        reflex  = self.opts.get('negative_xy_as_reflex', False)
+        reflex  = self.opts.get('negative_coords_reflect', False)
         pass;                   log('cid, reflex, cnt={}',(cid, reflex, cnt)) if iflog(log4fun,_log4mod) else 0
         prP     =  {}
 
@@ -833,19 +853,15 @@ class DlgAg:
 #               pass;           log('cid,pr_={}',(cid, {k:v for k,v in pr_.items() if k in ('h','y', 'sp_t', 'sp_b', 'a_t', 'a_b')}))
        #def _prepare_anchors
 
-    def show_menu(self, name, mn_content, where='+h', dx=0, dy=0, repro_to_file=None):
-        """ name            Control to show menu near it
-            mn_content      [{cap:'', tag:'', en:T, mark:''|'c'|'r', cmd:(lambda ag, tag:''), sub:[]}]
+    def show_menu(self, mn_content, name, where='+h', dx=0, dy=0, repro_to_file=None):
+        """ mn_content      [{cap:'', tag:'', en:T, mark:''|'c'|'r', cmd:(lambda ag, tag:''), sub:[]}]
+            name            Control to show menu near it
             where           Menu position 
                                 '+h'    - under the control
                                 '+w'    - righter the control
                                 'dxdy'  - to use dx, dy 
             repro_to_file   File name (w/o path) to write reprocode with only menu_proc 
         """
-        rfn     = tempfile.gettempdir()+os.sep+repro_to_file if repro_to_file else None
-        print(f(r'exec(open(r"{}", encoding="UTF-8").read())', rfn)) if rfn else 0
-        repro   = lambda line,*args,mod='a':open(rfn, mod).write(line.format(*args)+'\n') if rfn else 0
-        repro('import  cudatext as app', mod='w')
         pr      = self.cattrs(name, ('x','y','w','h', 'p'))
         pid     = pr['p']
         while pid:
@@ -864,52 +880,7 @@ class DlgAg:
         x, y    = app.dlg_proc(self.did, app.DLG_COORD_LOCAL_TO_SCREEN, index=x, index2=y)
         pass;                  #log('x, y={}',(x, y))
         
-        def da_mn_callbk(it):
-            pass;              #log('it[tag]={}',(it['tag']))
-            u_callbk= it['cmd']
-            upds    = u_callbk(self, it.get('tag', ''))
-            if upds is None:                                        # To hide/close
-                app.dlg_proc(self.did, app.DLG_HIDE)
-                return
-            if not upds:    return  # No changes
-            return self.update(upds)
-           #def da_mn_callbk
-            
-        def fill_mn(mid_prn, its):
-            for it in its:
-                if it['cap']=='-':
-                    app.menu_proc(  mid_prn, app.MENU_ADD, caption='-')
-                    repro("app.menu_proc(m{},app.MENU_ADD, caption='-')", mid_prn)
-                    continue
-                mid =(app.menu_proc(mid_prn, app.MENU_ADD, caption=it['cap'], command= lambda _it=it:da_mn_callbk(_it))     # _it=it solves lambda closure problem
-                        if 'cmd' in it else 
-                      app.menu_proc(mid_prn, app.MENU_ADD, caption=it['cap'])
-                     )
-                repro("m{}=app.menu_proc(m{},app.MENU_ADD, caption='{}')", mid, mid_prn, it['cap'])
-                if it.get('key', ''):
-                    app.menu_proc(      mid, app.MENU_SET_HOTKEY            , command=it['key'])
-                    repro("app.menu_proc(m{},app.MENU_SET_HOTKEY            , command='{}')", mid, it['key'])
-                
-                if it.get('mark', '')[:1]=='c' or it.get('mark', '')[:1]=='r' or it.get('ch', False) or it.get('rd', False):
-                    app.menu_proc(      mid, app.MENU_SET_CHECKED           , command=True)
-                    repro("app.menu_proc(m{},app.MENU_SET_CHECKED           , command=True)", mid)
-                if it.get('mark', '')[:1]=='r' or it.get('rd', False):
-                    app.menu_proc(      mid, app.MENU_SET_RADIOITEM         , command=True)
-                    repro("app.menu_proc(m{},app.MENU_SET_RADIOITEM         , command=True)", mid)
-                
-                if not it.get('en', True):
-                    app.menu_proc(      mid, app.MENU_SET_ENABLED           , command=False)
-                    repro("app.menu_proc(m{},app.MENU_SET_ENABLED           , command=False)", mid)
-                if 'sub' in it:
-                    fill_mn(mid, it['sub'])
-           #def fill_mn
-        
-        mid_top = app.menu_proc(    0,       app.MENU_CREATE)
-        repro("m{}=app.menu_proc(0,          app.MENU_CREATE)", mid_top)
-        fill_mn(mid_top, mn_content)
-        app.menu_proc(              mid_top, app.MENU_SHOW                  , command=f('{},{}', x, y))
-        repro("app.menu_proc(       m{},     app.MENU_SHOW                  , command='{},{}')", mid_top, x, y)
-        return []
+        return show_menu(mn_content, x, y, self, repro_to_file)
        #def show_menu
 
     def _gen_repro_code(self):
@@ -996,6 +967,66 @@ class DlgAg:
 
    #class DlgAg
 
+def show_menu(mn_content, x, y, ag=None, repro_to_file=None):
+    """ mn_content      [{cap:'', tag:'', en:T, mark:''|'c'|'r', cmd:(lambda ag, tag:''), sub:[]}]
+        x, y            Screen coords for menu top-left corner
+        repro_to_file   File name (w/o path) to write reprocode with only menu_proc 
+    """
+    rfn     = tempfile.gettempdir()+os.sep+repro_to_file            if repro_to_file else None
+    print(f(r'exec(open(r"{}", encoding="UTF-8").read())', rfn))    if rfn else 0
+    repro   = lambda line,*args,mod='a':(
+                open(rfn, mod).write(line.format(*args)+'\n')       if rfn else 0)
+    repro('import  cudatext as app', mod='w')
+    
+    def da_mn_callbk(it):
+        pass;                  #log('it[tag]={}',(it['tag']))
+        u_callbk= it['cmd']
+        upds    = u_callbk(ag, it.get('tag', ''))
+        if not ag:      return 
+        if upds is None:                                        # To hide/close
+            app.dlg_proc(ag.did, app.DLG_HIDE)
+            return
+        if not upds:    return  # No changes
+        return ag.update(upds)
+       #def da_mn_callbk
+            
+    def fill_mn(mid_prn, its):
+        for it in its:
+            if it['cap']=='-':
+                app.menu_proc(  mid_prn, app.MENU_ADD, caption='-')
+                repro("app.menu_proc(m{},app.MENU_ADD, caption='-')", mid_prn)
+                continue
+            mid =(app.menu_proc(mid_prn, app.MENU_ADD, caption=it['cap'], command= lambda _it=it:da_mn_callbk(_it))     # _it=it solves lambda closure problem
+                    if 'cmd' in it else 
+                  app.menu_proc(mid_prn, app.MENU_ADD, caption=it['cap'])
+                 )
+            repro("m{}=app.menu_proc(m{},app.MENU_ADD, caption='{}')", mid, mid_prn, it['cap'])
+            if it.get('key', ''):
+                app.menu_proc(      mid, app.MENU_SET_HOTKEY            , command=it['key'])
+                repro("app.menu_proc(m{},app.MENU_SET_HOTKEY            , command='{}')", mid, it['key'])
+                
+            if it.get('mark', '')[:1]=='c' or it.get('mark', '')[:1]=='r' or it.get('ch', False) or it.get('rd', False):
+                app.menu_proc(      mid, app.MENU_SET_CHECKED           , command=True)
+                repro("app.menu_proc(m{},app.MENU_SET_CHECKED           , command=True)", mid)
+            if it.get('mark', '')[:1]=='r' or it.get('rd', False):
+                app.menu_proc(      mid, app.MENU_SET_RADIOITEM         , command=True)
+                repro("app.menu_proc(m{},app.MENU_SET_RADIOITEM         , command=True)", mid)
+                
+            if not it.get('en', True):
+                app.menu_proc(      mid, app.MENU_SET_ENABLED           , command=False)
+                repro("app.menu_proc(m{},app.MENU_SET_ENABLED           , command=False)", mid)
+            if 'sub' in it:
+                fill_mn(mid, it['sub'])
+       #def fill_mn
+        
+    mid_top = app.menu_proc(    0,       app.MENU_CREATE)
+    repro("m{}=app.menu_proc(0,          app.MENU_CREATE)", mid_top)
+    fill_mn(mid_top, mn_content)
+    app.menu_proc(              mid_top, app.MENU_SHOW                  , command=f('{},{}', x, y))
+    repro("app.menu_proc(       m{},     app.MENU_SHOW                  , command='{},{}')", mid_top, x, y)
+    return []
+   #def show_menu
+
 OLD_PREFIX_FOR_USER_JSON = 'dlg_wrapper_fit_va_for_'
 NEW_PREFIX_FOR_USER_JSON = 'dlg_ag_va_tunning_'
 ENV2FITS= {'win':
@@ -1063,7 +1094,7 @@ def _fit_top_by_env(what_tp, base_tp='label'):
                          ,fit4lb.get(what_tp, 0)))          # defaulf
         pass;                   fit_o=fit
         fit = _os_scale(app.DLG_PROP_GET, {'y':fit})['y']
-        pass;                   log('what_tp,fit_o,fit,h={}',(what_tp,fit_o,fit,_get_gui_height(what_tp)))
+        pass;                  #log('what_tp,fit_o,fit,h={}',(what_tp,fit_o,fit,_get_gui_height(what_tp)))
     else:
         fit = _fit_top_by_env(what_tp) - _fit_top_by_env(base_tp)
     pass;                      #log('what_tp, base_tp, fit={}',(what_tp, base_tp, fit))
@@ -1222,23 +1253,6 @@ def _dlg_proc(id_dialog, id_action, prop='', index=-1, index2=-1, name=''):
     res = app.dlg_proc(id_dialog, id_action, prop, index, index2, name)
     if scale_on_get:    _os_scale(id_action, res,  index, index2, name)
     return res
-
-#   res             = ''
-#   if id_action==DLG_CTL_ADD_SET:  # Join ADD and SET for a control
-#       res = ctl_ind = \
-#       app.dlg_proc(id_dialog, app.DLG_CTL_ADD, name, -1, -1, '')       # type in name
-#       if ctl_ind is None: raise ValueError('Unknown type='+name)
-#       pass;                   log('ctl_ind={}',ctl_ind) if iflog(log4fun,_log4mod) else 0
-#       _os_scale(              app.DLG_CTL_PROP_SET, prop, ctl_ind, -1, '')
-#       pass;                   log('ctl_ind={}',ctl_ind) if iflog(log4fun,_log4mod) else 0
-#       app.dlg_proc(id_dialog, app.DLG_CTL_PROP_SET, prop, ctl_ind, -1, '')
-#   else:
-#       _os_scale(                    id_action, prop, index, index2, name) if scale_on_set else 0
-#       res = app.dlg_proc(id_dialog, id_action, prop, index, index2, name)
-#       pass;                  #log('res={}',({k:res[k] for k in res if k in ('x','y')})) if id_action==app.DLG_PROP_GET else 0
-#   
-#   _os_scale(id_action, res, index, index2, name)               if scale_on_get else 0
-#   return res
    #def _dlg_proc
 
 def _form_acts(act, fprs=None, did=None, key4store=None):
@@ -1274,9 +1288,9 @@ def _form_acts(act, fprs=None, did=None, key4store=None):
 #NOTE: tuning_valigns
 ######################################
 class Command:
-    def tuning_valigns(self):tuning_valigns()
+    def tuning_valigns(self):dlg_tuning_valigns()
    #class Command:
-def tuning_valigns():
+def dlg_tuning_valigns():
     pass;                      #log('ok')
     rsp     = False #changed
     UP,DN   = '↑↑','↓↓'
@@ -1375,11 +1389,6 @@ def tuning_valigns():
     ,('up6' ,dict(tp='bttn' ,y=160-3            ,x=-105 ,w= 50  ,cap=UP ,on=lambda cid,ag,d: up_dn(ag,'chb6',-1)))
     ,('dn6' ,dict(tp='bttn' ,y=160-3            ,x= -55 ,w= 50  ,cap=DN ,on=lambda cid,ag,d: up_dn(ag,'chb6', 1)))
                 
-#   ,('lb7', dict(tp='labl' ,y=190              ,x=   5 ,w=110  ,cap=cs[6]+sbleq))
-#   ,('lnb7',dict(tp='lilb' ,y=190+fits['_sp7'] ,x= 115 ,w=110  ,cap=seqeq      ,props=hints['_sp7']             ))
-#   ,('up7' ,dict(tp='bttn' ,y=190-3            ,x=-105 ,w= 50  ,cap=UP ,on=lambda cid,ag,d: up_dn(ag,'lnb7',-1)))
-#   ,('dn7' ,dict(tp='bttn' ,y=190-3            ,x= -55 ,w= 50  ,cap=DN ,on=lambda cid,ag,d: up_dn(ag,'lnb7', 1)))
-                
     ,('lb7' ,dict(tp='labl' ,y=190              ,x=   5 ,w=110  ,cap=cs[6]+sbl44))
     ,('sp7' ,dict(tp='sped' ,y=190+fits['_sp7'] ,x= 115 ,w=110  ,props=sped_pr  ,hint=hints['_sp7']   ,val=n4444))
     ,('up7' ,dict(tp='bttn' ,y=190-3            ,x=-105 ,w= 50  ,cap=UP ,on=lambda cid,ag,d: up_dn(ag,'sp7',-1) ))
@@ -1399,7 +1408,7 @@ def tuning_valigns():
                 ,   ctrls=cnts 
                 ,   fid = '-'
                 ,   opts={
-                        'negative_xy_as_reflex':True
+                        'negative_coords_reflect':True
 #                   ,   'gen_repro_to_file':'repro_tuning_valigns.py'
                         }
             ).show()    #NOTE: dlg_valign
@@ -1429,8 +1438,8 @@ if __name__ == '__main__' :
 ToDo
 [+][kv-kv][13feb19] Extract from cd_plug_lib.py
 [+][kv-kv][13feb19] Set tests
-[ ][kv-kv][15feb19] Add proxy for all form events
-[ ][kv-kv][15feb19] Add more calc for ctrl position
+[+][kv-kv][15feb19] Add proxy for all form events
+[+][kv-kv][15feb19] Add more calc for ctrl position
 [+][kv-kv][15feb19] ? Reorder params in fattrs ?
 [ ][kv-kv][15feb19] ? Cancel form moving by opt ?
 [+][kv-kv][15feb19] Allow r=-10 as <gap to right border> by opt
@@ -1439,6 +1448,12 @@ ToDo
 [+][kv-kv][18feb19] Menu
 [+][kv-kv][18feb19] dlg_valigns
 [ ][kv-kv][24feb19] Test for live attr on_exit
-[ ][kv-kv][25feb19] Allow dict for ctrls values
+[+][kv-kv][25feb19] Allow dict for ctrls values
 [ ][kv-kv][25feb19] Test focused in fattr
+[+][at-kv][06mar19] ag set first in all cb
+[?][at-kv][06mar19] Use "return False" as "return None" in cb
+[ ][at-kv][06mar19] Test for panel in panel
+[+][at-kv][06mar19] def handle for control/form
+[+][at-kv][06mar19] negative_xy_as_reflex -> negative_coords_reflect
+[ ][at-kv][06mar19] nonmodal?
 '''
