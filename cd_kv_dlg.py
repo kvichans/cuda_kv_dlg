@@ -20,12 +20,14 @@ VERSION     = re.split('Version:', __doc__)[1].split("'")[1]
 VERSION_V,  \
 VERSION_D   = VERSION.split(' ')
 
+def version():  return VERSION_V
+
 _       = None
 try:
     _   = get_translation(__file__) # I18N
 except:pass
 
-pass;                           _log4mod = LOG_FREE  # Order log in the module
+pass;                           _log4mod = LOG_FREE             # Order log in the module
     
 REDUCTIONS  = {
      'labl': 'label'
@@ -63,49 +65,100 @@ REDUCTIONS  = {
     ,'cols': 'columns'
     }
 
-CB_HIDE = lambda ag,name,d='':None     # Control callback to hide dlg
+CB_HIDE = lambda ag,name,d='':None                              # Control callback to hide dlg
+def CBP_WODATA(cb_user):                                        # Callback-proxy to skip data
+    return lambda ag,name,d='':cb_user(ag,name)
 
 ALI_CL  = app.ALIGN_CLIENT
 ALI_LF  = app.ALIGN_LEFT
 ALI_RT  = app.ALIGN_RIGHT
 ALI_TP  = app.ALIGN_TOP
 ALI_BT  = app.ALIGN_BOTTOM
+
+
 class DlgAg:
     # See github.com/kvichans/cuda_kv_dlg/wiki
+
+    @staticmethod
+    def version():  return VERSION_V
     
-    def __init__(self, ctrls, form=None, vals=None, fid=None, opts=None):
-        """ Create dialog
-        """
-        pass;                   log4fun=-1==-1  # Order log in the function
+    ###############
+    ## Creators
+    ###############
+    
+            
+    def __init__(self, ctrls, form, vals=None, fid=None, opts=None):
+        """ Create dialog """
+        pass;                   log4fun=0                       # Order log in the function
         # Fields
+        self._retval= None
+        self._hidden= True
+
         self.opts   = opts.copy() if opts else {}
         
         self.did    = app.dlg_proc(0, app.DLG_CREATE)
-        self.ctrls  = None                              # Mem-attrs of all controls {cid:{k:v}}
-        self.form   = None                              # Mem-attrs of form         {k:v}
+        self.ctrls  = None                                      # Mem-attrs of all controls {cid:{k:v}}
+        self.form   = None                                      # Mem-attrs of form         {k:v}
         
         self._setup(ctrls, form, vals, fid)
 
-        self._gen_repro_code()
+        self.gen_repro_code()
        #def __init__
+    
+    def __del__(self):
+        if self.did:    _dlg_proc(self.did, app.DLG_FREE)
 
-    def show(self, on_exit=None):
-        """ Show the dialog """
-        pass;                   log4fun=-1==-1  # Order log in the function
-        ed_caller   = ed
+    def show(self, on_exit=None, modal=True, onetime=True):
+        """ Show the dialog 
+                on_exit     Call the function after dlg was hidden
+                modal       Show as modal or nonmodal
+                onetime     Free resources (if True) after or wait next show() (if False)
+            Return (if modal):  (retval, vals) 
+                retval      Value of param ag.hide(retval) or None
+                vals        Last live val properties of all controls
+        """
+        pass;                   log4fun=0                       # Order log in the function
+        if not self.did:
+            raise ValueError('Dialog data is already destroyed (see "onetime" parameter)')
         
-        app.dlg_proc(self.did, app.DLG_SHOW_MODAL)
+        self._retval= None
+        self._hidden= False
+
+        ed_caller   = ed    if modal else None
+
+        def when_close():
+            if not self.fattr('p'):         # Not docked
+                _form_acts('save', did=self.did
+                          ,key4store=self.opts.get('form data key'))
+            if callable(on_exit):
+                on_exit(self)
+            vals    = self.vals(live=True)  if modal else None
+            if onetime:
+                if modal:
+                    _dlg_proc(self.did, app.DLG_FREE)
+                else:
+                    app.timer_proc(app.TIMER_START_ONE, lambda tag:app.dlg_proc(int(tag)
+                                      , app.DLG_FREE)
+                                  ,200                        ,tag=             str(self.did)
+                                  )
+                self.did    = 0
         
-        _form_acts('save', did=self.did
-                  ,key4store=self.opts.get('form data key'))
-        if on_exit and callable(on_exit):
-            on_exit(self)
-#       self._before_free()
-        _dlg_proc(self.did, app.DLG_FREE)
-        
-        ed_to_focus = self.opts.get('on_exit_focus_to_ed', ed_caller)
-        if ed_to_focus:
-            ed_to_focus.focus()
+            ed_to_focus = self.opts.get('on_exit_focus_to_ed', ed_caller)
+            if ed_to_focus:
+                ed_to_focus.focus()
+            
+            return (self._retval, vals)
+           #def when_close
+
+        if modal:
+            app.dlg_proc(self.did, app.DLG_SHOW_MODAL)
+            return   when_close()
+        # Nonmodal
+        app.dlg_proc(self.did, app.DLG_PROP_SET
+                    ,prop=dict(on_close=lambda idd, idc=0, data='':
+                     when_close()))
+        app.dlg_proc(self.did, app.DLG_SHOW_NONMODAL)
+        return (None, None)
        #def show
 
     ###############
@@ -113,8 +166,7 @@ class DlgAg:
     ###############
     def focused(self, live=True):
         if not live:    return self.form.get('fid')
-        form    = _dlg_proc(self.did
-                        , app.DLG_PROP_GET)
+        form    = _dlg_proc(self.did, app.DLG_PROP_GET)
         c_ind   = form.get('focused')
         if not find:    return None
         c_pr    = _dlg_proc(self.did, app.DLG_CTL_PROP_GET, index=c_ind)
@@ -125,8 +177,7 @@ class DlgAg:
     def fattr(self, attr, defv=None, live=True):
         """ Return one form property """
         if attr in ('focused', 'fid'):  return self.focused(live)
-        pr  = _dlg_proc(self.did
-                        , app.DLG_PROP_GET)     if live else    self.form
+        pr  = _dlg_proc(self.did, app.DLG_PROP_GET) if live else    self.form
         pass;                  #log('pr={}',(pr))
         rsp = pr.get(attr, defv)
         return rsp
@@ -134,24 +185,16 @@ class DlgAg:
 
     def fattrs(self, attrs=None, live=True):
         """ Return form properties """
-        pr  = _dlg_proc(self.did
-                        , app.DLG_PROP_GET)     if live else    self.form
+        pr  = _dlg_proc(self.did, app.DLG_PROP_GET) if live else    self.form
         return pr      if not attrs else \
                {attr:(self.focused(live) if attr in ('focused', 'fid') else pr.get(attr)) 
                     for attr in attrs}
        #def fattrs
 
-    def fhandle(self):
-        return self.did
-    
-    def сhandle(self, name):
-        return app.dlg_proc(self.did, app.DLG_CTL_HANDLE, name=name)
-    
     def cattr(self, name, attr, defv=None, live=True):
         """ Return one the control property """
         live= False if attr in ('type', 'p')    else live       # Unchangable
-        pr  = _dlg_proc(self.did
-                        , app.DLG_CTL_PROP_GET
+        pr  = _dlg_proc(self.did, app.DLG_CTL_PROP_GET
                         , name=name)            if live else    self.ctrls[name]
         attr    = REDUCTIONS.get(attr, attr)
         if attr not in pr:  return defv
@@ -163,8 +206,7 @@ class DlgAg:
 
     def cattrs(self, name, attrs=None, live=True):
         """ Return the control properties """
-        pr  = _dlg_proc(self.did
-                        , app.DLG_CTL_PROP_GET
+        pr  = _dlg_proc(self.did, app.DLG_CTL_PROP_GET
                         , name=name)            if live else    self.ctrls[name]
         attrs   = attrs if attrs else list(pr.keys())
         pass;                  #log('pr={}',(pr))
@@ -179,67 +221,89 @@ class DlgAg:
         return rsp
        #def cattrs
        
-    def cval(self, name, live=True):
+    def val(self, name, live=True):
         """ Return the control val property """
         return      self.cattr(name, 'val', defv=None, live=live)
-    def cvals(self, names, live=True):
-        """ Return the controls val property """
-        return {cid:self.cattr(cid, 'val', defv=None, live=live) for cid in names}
+    def vals(self, names=None, live=True):
+        """ Return val property for the controls 
+            or (if names==None) for all controls with val
+        """
+        if names:
+            return  {cid:self.cattr(cid, 'val', defv=None, live=True) 
+                        for cid in names}
+        return      {cid:self.cattr(cid, 'val', defv=None, live=True) 
+                        for (cid,cfg) in self.ctrls.items() 
+                        if 'val' in cfg}
     
-    def chandle(self, name):
-        return app.dlg_proc(self.did, app.DLG_CTL_HANDLE, name=name)
-
 
     ###############
     ## Updaters
     ###############
-    def update(self, upds):
+    def reset(self, ctrls, form, vals=None, fid=None):
+        pass;                   log4fun=0                       # Order log in the function
+        _form_acts('save', did=self.did
+                  ,key4store=self.opts.get('form data key'))
+        app.dlg_proc(self.did, app.DLG_CTL_DELETE_ALL)
+        self._setup(ctrls, form, vals, fid)
+        return []
+       #def reset
+    
+    def update(self, upds, retval=None):
         """ Update most of dlg props
-            upds is dict(ctrls=, form=, vals=, fid=) 
-                ctrls   [(name, {k:v})] or {name:{k:v}}
-                form    {k:v}
-                vals    {name:v}
-                fid     name
-            Or upds is list of such dicts
+                upds        dict(ctrls=, form=, vals=, fid=) 
+                    ctrls   [(name, {k:v})] or {name:{k:v}}
+                    form    {k:v}
+                    vals    {name:v}
+                    fid     name
+                            Or list of such dicts
+                retval      Value to return if dlg will hide on the update
         """
-        pass;                   log4fun=-1==-1  # Order log in the function
-        if upds is None:                                                # To hide/close
-            app.dlg_proc(self.did, app.DLG_HIDE)
-            return
-        if not upds:
-            return False                                                # False to cancel the current event
-        if isinstance(upds, tuple) or isinstance(upds, list) :          # Allow to use list of upd data
-            for upd in upds:
-                self.update(upd)
+        pass;                   log4fun=0                       # Order log in the function
+        if self._hidden:
             return 
+        if upds is None:                                        # To hide/close
+            pass;              #log('to hide') if logif(log4fun,_log4mod) else 0
+            if retval is not None:
+                self._retval = retval
+            app.dlg_proc(self.did, app.DLG_HIDE)
+            self._hidden = True
+            return None
+        if isinstance(upds, bool) and not upds:
+            pass;              #log('to stop ev') if logif(log4fun,_log4mod) else 0
+            return False                                        # False to cancel the current event
+        if isinstance(upds, tuple) or isinstance(upds, list) :  # Allow to use list of upd data
+            pass;              #log('to many upd') if logif(log4fun,_log4mod) else 0
+            for upd in upds:
+                if self.update(upd) is None:
+                    break
+            return
         cupds   = upds.get('ctrls',  [])
         cupds   = odict(cupds)      if isinstance(cupds, tuple) or isinstance(cupds, list) else cupds
-        pass;          #log('cupds={}',(cupds))
+        pass;                  #log('cupds={}',(cupds))
         vals    = upds.get('vals', {})
         form    = upds.get('form', {})
 
         DlgAg._check_data(self.ctrls, cupds, form, vals, upds.get('fid'))
 
         if False:pass
-        elif vals and not cupds:                                        # Allow to update only val in some controls
+        elif vals and not cupds:                                # Allow to update only val in some controls
             cupds     = { cid_    :  {'val':val} for cid_, val in vals.items()}
         elif vals and     cupds:
             for cid_, val in vals.items():
                 if cid_ not in cupds:
-                    cupds[cid_]   =  {'val':val}                        # Merge vals to cupds
+                    cupds[cid_]   =  {'val':val}                # Merge vals to cupds
                 else:
-                    cupds[cid_]['val']    = val                         # NB! val from vals but not from cupds
+                    cupds[cid_]['val']    = val                 # NB! val from vals but not from cupds
         for cid_, cfg in cupds.items():
-            cfg['tp']   = self.ctrls[cid_]['tp']                        # Type is stable
-            cfg['type'] = self.ctrls[cid_]['type']                      # Type is stable
+            cfg['tp']   = self.ctrls[cid_]['tp']                # Type is stable
+            cfg['type'] = self.ctrls[cid_]['type']              # Type is stable
 
         if form:
             self.form.update(form)
             pass;              #log('form={}',(self.fattrs(live=F)))
             pass;              #log('form={}',(self.fattrs()))
             pass;              #log('form={}',(form))
-            _dlg_proc(self.did
-                     ,app.DLG_PROP_SET
+            _dlg_proc(self.did, app.DLG_PROP_SET
                      ,prop=form)
 
         if cupds:
@@ -250,23 +314,28 @@ class DlgAg:
                 cfg.update(new_cfg)
                 c_prop  = self._prepare_control_prop(cid, new_cfg, {'ctrls':cupds})
                 pass;          #log('c_prop={}',(c_prop)) if new_ctrl['type']=='listview' else None
-                _dlg_proc(self.did
-                         ,app.DLG_CTL_PROP_SET
+                _dlg_proc(self.did, app.DLG_CTL_PROP_SET
                          ,name=cid
                          ,prop=c_prop
                          )
 
         if 'fid' in upds:
             self.form['fid']    = upds['fid']
-            app.dlg_proc(self.did
-                        ,app.DLG_CTL_FOCUS
+            app.dlg_proc(self.did, app.DLG_CTL_FOCUS
                         ,name=upds['fid'])
        #def update
        
     @staticmethod
     def _check_data(mem_ctrls, ctrls, form, vals, fid):
         # Check cid/tid/fid in (ctrls, form, vals, fid) to exist into mem_ctrls
-        if 'skip checks'=='skip checks':    return 
+        if 'skip checks'!='skip checks':    return
+        
+        if isinstance(ctrls, tuple) or isinstance(ctrls, list):
+            cids    = [cid_cnt[0] for cid_cnt in ctrls]
+            cids_d  = [cid for cid in cids if cids.count(cid)>1]
+            if cids_d:
+                raise ValueError(f('Repeated names: {}', set(cids_d)))
+        
         no_tids = {cnt['tid'] 
                     for cnt in ctrls 
                     if 'tid' in cnt and 
@@ -297,11 +366,11 @@ class DlgAg:
                 vals    {name:v}
                 fid     name
         """
-        pass;                   log4fun=-1==-1  # Order log in the function
+        pass;                   log4fun=0                       # Order log in the function
         #NOTE: DlgAg init
         self.ctrls  = odict(ctrls)  if isinstance(ctrls, tuple) or isinstance(ctrls, list) else ctrls.copy()
         self.form   = form.copy()
-        fid         = fid           if fid else form.get('fid', form.get('focused'))
+        fid         = fid           if fid else form.get('fid', form.get('focused'))    # focused?
         
         DlgAg._check_data(self.ctrls, ctrls, form, vals, fid)
         
@@ -317,85 +386,94 @@ class DlgAg:
             ccfg['tp']      = tp
             ccfg['type']    = REDUCTIONS.get(tp, tp)
             # Create control
-            _dlg_proc(self.did
-                     ,DLG_CTL_ADD_SET
+            _dlg_proc(self.did, DLG_CTL_ADD_SET
                      ,name=ccfg['type']
                      ,prop=self._prepare_control_prop(cid, ccfg))
            #for cid, ccfg
         
         # Prepare form
-        fpr     = self.form
-        fpr['topmost']      = True
-        w0      = fpr['w']
-        h0      = fpr['h']
+        fpr             = self.form
+        fpr['topmost']  = True
         # Prepare callbacks
         def get_proxy_cb(u_callbk, event):
-            def ag_callbk(idd, idc=-1, data=''):
-                upds    = user_callbk(self)
-                if upds:
-                    return self.update(upds)
-               #def ag_callbk
-            return ag_callbk
-           #def get_proxy_cb
+            def form_callbk(idd, key=-1, data=''):
+                upds    = user_callbk(self, key, data)
+                return self.update(upds)
+            return form_callbk
         for on_key in [k for k in fpr if k[:3]=='on_' and callable(fpr[k])]:
             user_callbk = fpr[on_key]
             fpr[on_key] = get_proxy_cb(user_callbk, on_key)
            #for on_key
         
-        # Prepare to resize
-        if callable(fpr.get('on_resize')):
-            fpr.get['resize']= True
-        if fpr.get('resize'):
-#           fpr.pop('resize')
-#           fpr.get['border']= app.DBORDER_DIALOG
-            self._prepare_anchors()                                 # a,aid -> a_*,sp_*
-            fpr['w_min']    = fpr.get('w_min', w0)
-            fpr['h_min']    = fpr.get('h_min', h0)
-        # Restore prev pos/sizes
-        fpr     = _form_acts('move', fprs=fpr      # Move and (maybe) resize
-                            , key4store=self.opts.get('form data key'))
-        _dlg_proc(self.did, app.DLG_PROP_SET, prop=fpr)         # push to live
-        if 'on_resize'   in fpr and \
-           (fpr['w'],fpr['h']) != (w0,h0):
-            pass;              #log('fpr[w],fpr[h],w0,h0={}',(fpr['w'], fpr['h'], w0,h0))
-            fpr['on_resize'](self)
-
+        self._prepare_anchors()                                 # a,aid -> a_*,sp_*
+        self._prepare_frame()                                   # frame, border, on_resize
         if fid:
-            fpr['focused']  = fid                               # save in mem
+            fpr['fid']  = fid                                   # Save in mem
             app.dlg_proc(self.did, app.DLG_CTL_FOCUS, name=fid) # push to live
        #def _setup
 
+    def _prepare_frame(self, fpr=None):
+        fpr     = self.form if fpr is None else fpr
+        w0,h0   = fpr['w'],fpr['h']
+
+        if callable(fpr.get('on_resize')):
+            fpr['frame']    = fprs.get('frame', '') + 'resize'
+
+        if False:pass
+        elif 'frame' not in fpr and 'border' not in fpr:
+            fpr['border']   = app.DBORDER_DIALOG
+        elif 'border' in fpr:
+            pass
+        elif 'no' in fpr['frame']:
+            fpr['border']   = app.DBORDER_NONE
+        elif 'resize' in fpr['frame'] and ('full-cap' in fpr['frame'] or 'min-max' in fpr['frame']):
+            fpr['border']   = app.DBORDER_SIZE
+        elif 'resize' in fpr['frame']:
+            fpr['border']   = app.DBORDER_TOOLSIZE
+        elif 'full-cap' in fpr['frame'] or 'min-max' in fpr['frame']:
+            fpr['border']   = app.DBORDER_SINGLE
+        pass;                  #log("fpr['border']={}",(fpr['border'], get_const_name(fpr['border'], 'DBORDER_')))
+        
+        if fpr.get('border') in (app.DBORDER_SIZE, app.DBORDER_TOOLSIZE):
+            fpr['w_min']    = fpr.get('w_min', w0)
+            fpr['h_min']    = fpr.get('h_min', h0)
+        
+        # Restore prev pos/sizes
+        fpr     = _form_acts('move', fprs=fpr                   # Move and (maybe) resize
+                            , key4store=self.opts.get('form data key'))
+        _dlg_proc(self.did, app.DLG_PROP_SET, prop=fpr)         # Push to live
+        if      'on_resize' in fpr and (fpr['w'],fpr['h']) != (w0,h0):
+            fpr['on_resize'](self)
+       #def _prepare_frame
+
     def _prepare_control_prop(self, cid, ccfg, opts={}):
-        pass;                   log4fun=-1== 1  # Order log in the function
+        pass;                   log4fun=0                       # Order log in the function
         Self    = self.__class__
-        pass;                   log('cid, ccfg={}',(cid, ccfg)) if iflog(log4fun,_log4mod) else 0
+        pass;                   log('cid, ccfg={}',(cid, ccfg)) if logif(log4fun,_log4mod) else 0
         EXTRA_C_ATTRS   = ['tp','r','b','tid','a','aid']
         tp      = ccfg['type']
-        Self._preprocessor(ccfg, tp)                    # sto -> tab_stop,...         EXTRA_C_ATTRS
-        c_pr    = {k:v for (k,v) in ccfg.items()         if k not in ['items', 'val']+EXTRA_C_ATTRS and k[:3]!='on_'}
+        Self._preprocessor(ccfg, tp)                            # sto -> tab_stop,...   EXTRA_C_ATTRS
+        c_pr    = {k:v for (k,v) in ccfg.items()         if k not in ['items', 'val', 'cols']+EXTRA_C_ATTRS and k[:3]!='on_'}
         c_pr['name'] = cid
-        c_pr    = self._prepare_it_vl(c_pr, ccfg, opts) #if k     in ['items', 'val']
+        c_pr    = self._prepare_it_vl(c_pr, ccfg, opts) #if k     in ['items', 'val', 'cols']
         
-        c_pr.update(self._prep_pos_attrs(ccfg, cid, opts.get('ctrls')))                    # l,r,t,b,tid -> x,y,w,h
-        pass;                   log('c_pr={}',(c_pr)) if iflog(log4fun,_log4mod) else 0
+        c_pr.update(self._prep_pos_attrs(ccfg, cid, opts.get('ctrls')))                    # r,b,tid -> x,y,w,h
+        pass;                   log('c_pr={}',(c_pr)) if logif(log4fun,_log4mod) else 0
         
         # Prepare callbacks
         def get_proxy_cb(u_callbk, event):
-            def ag_callbk(idd, idc, data):
+            def ctrl_callbk(idd, idc, data):
                 pass;          #log('ev,idc,cid,data={}',(event,idc,cid,data))
                 if tp in ('listview',) and type(data) in (tuple, list):
-                    if not data[1]: return  # Skip event "selection loss"
+                    if not data[1]: return                      # Skip event "selection loss"
                     # Crutch for Linux! Wait fix in core
                     event_val   = app.dlg_proc(idd, app.DLG_CTL_PROP_GET, index=idc)['val']
                     if event_val!=data[0]:
                         app.dlg_proc(          idd, app.DLG_CTL_PROP_SET, index=idc, prop={'val':data[0]})
-                pass;          #log('?? u_callbk',())
                 upds    = u_callbk(self, cid, data)
-                pass;          #log('ok u_callbk upds={}',(upds))
-                pass;          #log('upds={}',(upds))
-                return self.update(upds)
-               #def ag_callbk
-            return ag_callbk
+                return self.update(upds, cid)
+               #def ctrl_callbk
+            return ctrl_callbk
            #def get_proxy_cb
             
         for on_key in [k for k in ccfg if k[:3]=='on_' and callable(ccfg[k])]:
@@ -409,10 +487,10 @@ class DlgAg:
        #def _prepare_control_prop
 
     def _prep_pos_attrs(self, cnt, cid, ctrls4cid=None):
-        pass;                   log4fun=-1== 1  # Order log in the function
+        pass;                   log4fun=0                       # Order log in the function
         ctrls4cid = ctrls4cid if ctrls4cid else self.ctrls
         reflex  = self.opts.get('negative_coords_reflect', False)
-        pass;                   log('cid, reflex, cnt={}',(cid, reflex, cnt)) if iflog(log4fun,_log4mod) else 0
+        pass;                   log('cid, reflex, cnt={}',(cid, reflex, cnt)) if logif(log4fun,_log4mod) else 0
         prP     =  {}
 
         cnt_ty  = ctrls4cid[cid].get('tp', ctrls4cid[cid].get('type'))
@@ -427,8 +505,8 @@ class DlgAg:
                       ,'filter_listbox', 'filter_listview'
                       ):
             # OS specific control height
-            cnt['h']    = _get_gui_height(cnt_ty)   # type kills h
-            prP['_ready_h'] = True                  # Skip scaling
+            cnt['h']    = _get_gui_height(cnt_ty)               # Some types kill 'h'
+            prP['_ready_h'] = True                              # Skip scaling
             pass;              #log('cnt={}',(cnt)) if cnt_ty=='checkbutton' else 0
 
         if 'tid' in cnt:
@@ -438,38 +516,38 @@ class DlgAg:
             bas_ty      = bas_cnt.get('tp', bas_cnt.get('type'))
             bas_ty      = REDUCTIONS.get(bas_ty, bas_ty)
             t           = bas_cnt.get('y', 0) + _fit_top_by_env(cnt_ty, bas_ty)
-            cnt['y']    = t          # tid kills y
+            cnt['y']    = t                                     # 'tid' kills 'y'
         
         if reflex: #NOTE: reflex
             def do_reflex(cnt_, k, pval):
                 if 0>cnt_.get(k, 0):
-                    pass;       log('cid, k, pval, cnt_={}',(cid, k, pval, cnt_)) if iflog(log4fun,_log4mod) else 0
+                    pass;       log('cid, k, pval, cnt_={}',(cid, k, pval, cnt_)) if logif(log4fun,_log4mod) else 0
                     cnt_[k]    = pval + cnt_[k]
-                    pass;       log('cnt_={}',(cnt_)) if iflog(log4fun,_log4mod) else 0
+                    pass;       log('cnt_={}',(cnt_)) if logif(log4fun,_log4mod) else 0
             prnt    = cnt.get('p', self.form)
             prnt_w  = prnt.get('w', 0) 
             prnt_h  = prnt.get('h', 0)
-            pass;               log('prnt={}',(prnt)) if iflog(log4fun,_log4mod) else 0
-            pass;               log('prnt_w,prnt_h={}',(prnt_w,prnt_h)) if iflog(log4fun,_log4mod) else 0
-            pass;               log('cnt={}',(cnt)) if iflog(log4fun,_log4mod) else 0
+            pass;               log('prnt={}',(prnt)) if logif(log4fun,_log4mod) else 0
+            pass;               log('prnt_w,prnt_h={}',(prnt_w,prnt_h)) if logif(log4fun,_log4mod) else 0
+            pass;               log('cnt={}',(cnt)) if logif(log4fun,_log4mod) else 0
             do_reflex(cnt, 'x', prnt_w)
             do_reflex(cnt, 'r', prnt_w)
             do_reflex(cnt, 'y', prnt_h)
             do_reflex(cnt, 'b', prnt_h)
-            pass;               log('cnt={}',(cnt)) if iflog(log4fun,_log4mod) else 0
+            pass;               log('cnt={}',(cnt)) if logif(log4fun,_log4mod) else 0
 
         def calt_third(kasx, kasr, kasw, src, trg):
             # Use d[kasw] = d[kasr] - d[kasx]
             #   to copy val from src to trg
             # Skip kasr if it is redundant
             if False:pass
-            elif kasx in src and kasw in src:     # x,w or y,h is enough
+            elif kasx in src and kasw in src:                   # x,w or y,h is enough
                 trg[kasx]   = src[kasx]
                 trg[kasw]   = src[kasw]
-            elif kasr in src and kasw in src:     # r,w or b,h to calc
+            elif kasr in src and kasw in src:                   # r,w or b,h to calc
                 trg[kasx]   = src[kasw] - src[kasr]
                 trg[kasw]   = src[kasw]
-            elif kasx in src and kasr in src:     # x,r or y,b to calc
+            elif kasx in src and kasr in src:                   # x,r or y,b to calc
                 trg[kasx]   = src[kasx]
                 trg[kasw]   = src[kasr] - src[kasx]
             return trg
@@ -496,7 +574,7 @@ class DlgAg:
        #def _prep_pos_attrs
 
     def _prepare_it_vl(self, c_pr, cfg_ctrl, opts={}):
-        pass;                   log4fun=-1==-1  # Order log in the function
+        pass;                   log4fun=0                       # Order log in the function
         tp      = cfg_ctrl['type']
 
         if 'val' in cfg_ctrl        and opts.get('prepare val', True):
@@ -546,9 +624,6 @@ class DlgAg:
                 pass;          #log('cols={}',(cols))
                 str_sc = lambda n: str(_os_scale('scale', {'w':n})['w'])
                 cols   = '\t'.join(['\r'.join([       cd[    'nm']
-#                                             ,str(   cd[    'wd']   )
-#                                             ,str(   cd.get('mi' ,0))
-#                                             ,str(   cd.get('ma' ,0))
                                               ,str_sc(cd[    'wd']   )
                                               ,str_sc(cd.get('mi' ,0))
                                               ,str_sc(cd.get('ma' ,0))
@@ -627,13 +702,9 @@ class DlgAg:
             # [{nm:str, wd:num, mi:num, ma:num, al:str, au:bool, vi:bool}]
             pass;              #log('new_val={}',repr(new_val))
             new_val= [ci.split('\r')      for ci in new_val.split('\t')]
-#           new_val= [ci.split('\r')[:-1] for ci in new_val.split('\t')[:-1]]   # API bug
             pass;              #log('new_val={}',repr(new_val))
             int_sc = lambda s: _os_scale('unscale', {'w':int(s)})['w']
             new_val= [dict(nm=       ci[0]
-#                         ,wd=int( ci[1])
-#                         ,mi=int( ci[2])
-#                         ,ma=int( ci[3])
                           ,wd=int_sc(ci[1])
                           ,mi=int_sc(ci[2])
                           ,ma=int_sc(ci[3])
@@ -647,8 +718,8 @@ class DlgAg:
 
     @staticmethod
     def _preprocessor(cnt, tp):
-        pass;                   log4fun=-1== 1  # Order log in the function
-        pass;                   log('tp,cnt={}',(tp,cnt)) if iflog(log4fun,_log4mod) else 0
+        pass;                   log4fun=0                       # Order log in the function
+        pass;                   log('tp,cnt={}',(tp,cnt)) if logif(log4fun,_log4mod) else 0
         # call -> on_???
         if 'on' in cnt:
             if False:pass
@@ -661,21 +732,21 @@ class DlgAg:
 
         # Reductions
         if 'ali' in cnt:
-            cnt['align'] = cnt.pop('ali')                               # ali -> align
+            cnt['align'] = cnt['ali']                                   # ali -> align
         if 'sp_lr' in cnt:
-            cnt['sp_l'] = cnt['sp_r']               = cnt.pop('sp_lr')
+            cnt['sp_l'] = cnt['sp_r']               = cnt['sp_lr']
         if 'sp_lrt' in cnt:
-            cnt['sp_l'] = cnt['sp_r'] = cnt['sp_t'] = cnt.pop('sp_lrt')
+            cnt['sp_l'] = cnt['sp_r'] = cnt['sp_t'] = cnt['sp_lrt']
         if 'sp_lrb' in cnt:
-            cnt['sp_l'] = cnt['sp_r'] = cnt['sp_b'] = cnt.pop('sp_lrb')
+            cnt['sp_l'] = cnt['sp_r'] = cnt['sp_b'] = cnt['sp_lrb']
 
         cnt['autosize'] = False
         if 'au' in cnt:
-            cnt['autosize'] = cnt.pop('au')                             # au -> autosize
+            cnt['autosize'] = cnt['au']                                 # au -> autosize
         if 'sto' in cnt:
-            cnt['tab_stop'] = cnt.pop('sto')                            # sto -> tab_stop
+            cnt['tab_stop'] = cnt['sto']                                # sto -> tab_stop
         if 'tor' in cnt:
-            cnt['tab_order'] = cnt.pop('tor')                           # tor -> tab_order
+            cnt['tab_order'] = cnt['tor']                               # tor -> tab_order
         
         # Move smth to props
         if 'props' in cnt:
@@ -684,95 +755,110 @@ class DlgAg:
             cnt['cap']  = cnt['cap'][1:]
             cnt['props']= '1'
         elif tp=='label' and    cnt.get('ralign'):                      # ralign -> props
-            cnt['props']=       cnt.pop('ralign')
-        elif tp=='button' and cnt.get('def_bttn') in ('1', True):       # def_bttn -> props
-            cnt['props']= '1'
+            cnt['props']=           cnt['ralign']
         elif tp=='button' and cnt.get('def_bt') in ('1', True):         # def_bt -> props
             cnt['props']= '1'
         elif tp=='spinedit' and cnt.get('min_max_inc'):                 # min_max_inc -> props
-            cnt['props']=       cnt.pop('min_max_inc')
+            cnt['props']=           cnt['min_max_inc']
         elif tp=='linklabel' and    cnt.get('url'):                     # url -> props
-            cnt['props']=           cnt.pop('url')
+            cnt['props']=               cnt['url']
         elif tp=='listview' and cnt.get('grid'):                        # grid -> props
-            cnt['props']=       cnt.pop('grid')
+            cnt['props']=       cnt['grid']
         elif tp=='tabs' and     cnt.get('at_botttom'):                  # at_botttom -> props
-            cnt['props']=       cnt.pop('at_botttom')
+            cnt['props']=           cnt['at_botttom']
         elif tp=='colorpanel' and   cnt.get('brdW_fillC_fontC_brdC'):   # brdW_fillC_fontC_brdC -> props
-            cnt['props']=           cnt.pop('brdW_fillC_fontC_brdC')
+            cnt['props']=               cnt['brdW_fillC_fontC_brdC']
         elif tp in ('edit', 'memo') and cnt.get('ro_mono_brd'):         # ro_mono_brd -> props
-            cnt['props']=               cnt.pop('ro_mono_brd')
+            cnt['props']=                   cnt['ro_mono_brd']
 
         if 'props' in cnt and app.app_api_version()>='1.0.224':
             # Convert props to ex0..ex9
             #   See 'Prop "ex"' at wiki.freepascal.org/CudaText_API
             lsPr = cnt.pop('props').split(',')
-            pass;               log('lsPr={}',(lsPr)) if iflog(log4fun,_log4mod) else 0
+            pass;               log('lsPr={}',(lsPr)) if logif(log4fun,_log4mod) else 0
             if False:pass
             elif tp=='button':
-                cnt['ex0']  = '1'==lsPr[0]  #bool: default for Enter key
+                cnt['ex0']  = '1'==lsPr[0]                      #bool: default for Enter key
             elif tp in ('edit', 'memo'):
-                cnt['ex0']  = '1'==lsPr[0]  #bool: read-only
-                cnt['ex1']  = '1'==lsPr[1]  #bool: font is monospaced
-                cnt['ex2']  = '1'==lsPr[2]  #bool: show border
+                cnt['ex0']  = '1'==lsPr[0]                      #bool: read-only
+                cnt['ex1']  = '1'==lsPr[1]                      #bool: font is monospaced
+                cnt['ex2']  = '1'==lsPr[2]                      #bool: show border
             elif tp=='spinedit':
-                cnt['ex0']  =  int(lsPr[0]) #int:  min value
-                cnt['ex1']  =  int(lsPr[1]) #int:  max value
-                cnt['ex2']  =  int(lsPr[2]) #int:  increment
+                cnt['ex0']  =  int(lsPr[0])                     #int:  min value
+                cnt['ex1']  =  int(lsPr[1])                     #int:  max value
+                cnt['ex2']  =  int(lsPr[2])                     #int:  increment
             elif tp=='label':
-                cnt['ex0']  = '1'==lsPr[0]  #bool: right aligned
+                cnt['ex0']  = '1'==lsPr[0]                      #bool: right aligned
             elif tp=='linklabel':
-                cnt['ex0']  = lsPr[0]       #str: URL. Should not have ','. Clicking on http:/mailto: URLs should work, result of clicking on other kinds depends on OS.
+                cnt['ex0']  = lsPr[0]                           #str: URL. Should not have ','. 
+                                                                #     Clicking on http:/mailto: URLs should work, result of clicking on other kinds depends on OS.
             elif tp=='listview':
-                cnt['ex0']  = '1'==lsPr[0]  #bool: show grid lines
+                cnt['ex0']  = '1'==lsPr[0]                      #bool: show grid lines
             elif tp=='tabs':
-                cnt['ex0']  = '1'==lsPr[0]  #bool: show tabs at bottom
+                cnt['ex0']  = '1'==lsPr[0]                      #bool: show tabs at bottom
             elif tp=='colorpanel':
-                cnt['ex0']  =  int(lsPr[0]) #int:  border width (from 0)
-                cnt['ex1']  =  int(lsPr[1]) #int:  color of fill
-                cnt['ex2']  =  int(lsPr[2]) #int:  color of font
-                cnt['ex3']  =  int(lsPr[3]) #int:  color of border
+                cnt['ex0']  =  int(lsPr[0])                     #int:  border width (from 0)
+                cnt['ex1']  =  int(lsPr[1])                     #int:  color of fill
+                cnt['ex2']  =  int(lsPr[2])                     #int:  color of font
+                cnt['ex3']  =  int(lsPr[3])                     #int:  color of border
             elif tp=='filter_listview':
-                cnt['ex0']  = '1'==lsPr[0]  #bool: filter works for all columns
+                cnt['ex0']  = '1'==lsPr[0]                      #bool: filter works for all columns
             elif tp=='image':
-                cnt['ex0']  = '1'==lsPr[0]  #bool: center picture
-                cnt['ex1']  = '1'==lsPr[1]  #bool: stretch picture
-                cnt['ex2']  = '1'==lsPr[2]  #bool: allow stretch in
-                cnt['ex3']  = '1'==lsPr[3]  #bool: allow stretch out
-                cnt['ex4']  = '1'==lsPr[4]  #bool: keep origin x, when big picture clipped
-                cnt['ex5']  = '1'==lsPr[5]  #bool: keep origin y, when big picture clipped
+                cnt['ex0']  = '1'==lsPr[0]                      #bool: center picture
+                cnt['ex1']  = '1'==lsPr[1]                      #bool: stretch picture
+                cnt['ex2']  = '1'==lsPr[2]                      #bool: allow stretch in
+                cnt['ex3']  = '1'==lsPr[3]                      #bool: allow stretch out
+                cnt['ex4']  = '1'==lsPr[4]                      #bool: keep origin x, when big picture clipped
+                cnt['ex5']  = '1'==lsPr[5]                      #bool: keep origin y, when big picture clipped
             elif tp=='trackbar':
-                cnt['ex0']  =  int(lsPr[0]) #int:  orientation (0: horz, 1: vert)
-                cnt['ex1']  =  int(lsPr[1]) #int:  min value
-                cnt['ex2']  =  int(lsPr[2]) #int:  max value
-                cnt['ex3']  =  int(lsPr[3]) #int:  line size
-                cnt['ex4']  =  int(lsPr[4]) #int:  page size
-                cnt['ex5']  = '1'==lsPr[5]  #bool: reversed
-                cnt['ex6']  =  int(lsPr[6]) #int:  tick marks position (0: bottom-right, 1: top-left, 2: both)
-                cnt['ex7']  =  int(lsPr[7]) #int:  tick style (0: none, 1: auto, 2: manual)
+                cnt['ex0']  =  int(lsPr[0])                     #int:  orientation (0: horz, 1: vert)
+                cnt['ex1']  =  int(lsPr[1])                     #int:  min value
+                cnt['ex2']  =  int(lsPr[2])                     #int:  max value
+                cnt['ex3']  =  int(lsPr[3])                     #int:  line size
+                cnt['ex4']  =  int(lsPr[4])                     #int:  page size
+                cnt['ex5']  = '1'==lsPr[5]                      #bool: reversed
+                cnt['ex6']  =  int(lsPr[6])                     #int:  tick marks position 
+                                                                #      (0: bottom-right, 1: top-left, 2: both)
+                cnt['ex7']  =  int(lsPr[7])                     #int:  tick style 
+                                                                #      (0: none, 1: auto, 2: manual)
             elif tp=='progressbar':
-                cnt['ex0']  =  int(lsPr[0]) #int:  orientation (0: horz, 1: vert, 2: right-to-left, 3: top-down)
-                cnt['ex1']  =  int(lsPr[1]) #int:  min value
-                cnt['ex2']  =  int(lsPr[2]) #int:  max value
-                cnt['ex3']  = '1'==lsPr[3]  #bool: smooth bar
-                cnt['ex4']  =  int(lsPr[4]) #int:  step
-                cnt['ex5']  =  int(lsPr[5]) #int:  style (0: normal, 1: marquee)
-                cnt['ex6']  = '1'==lsPr[6]  #bool: show text (only for some OSes)
+                cnt['ex0']  =  int(lsPr[0])                     #int:  orientation 
+                                                                #      (0: horz, 1: vert, 2: right-to-left, 3: top-down)
+                cnt['ex1']  =  int(lsPr[1])                     #int:  min value
+                cnt['ex2']  =  int(lsPr[2])                     #int:  max value
+                cnt['ex3']  = '1'==lsPr[3]                      #bool: smooth bar
+                cnt['ex4']  =  int(lsPr[4])                     #int:  step
+                cnt['ex5']  =  int(lsPr[5])                     #int:  style (0: normal, 1: marquee)
+                cnt['ex6']  = '1'==lsPr[6]                      #bool: show text (only for some OSes)
             elif tp=='progressbar_ex':
-                cnt['ex0']  =  int(lsPr[0]) #int:  style (0: text only, 1: horz bar, 2: vert bar, 3: pie, 4: needle, 5: half-pie)
-                cnt['ex1']  =  int(lsPr[1]) #int:  min value
-                cnt['ex2']  =  int(lsPr[2]) #int:  max value
-                cnt['ex3']  = '1'==lsPr[3]  #bool: show text
-                cnt['ex4']  =  int(lsPr[4]) #int:  color of background
-                cnt['ex5']  =  int(lsPr[5]) #int:  color of foreground
-                cnt['ex6']  =  int(lsPr[6]) #int:  color of border
+                cnt['ex0']  =  int(lsPr[0])                     #int:  style 
+                                                                #      (0: text only
+                                                                #      ,1: horz bar
+                                                                #      ,2: vert bar
+                                                                #      ,3: pie
+                                                                #      ,4: needle
+                                                                #      ,5: half-pie)
+                cnt['ex1']  =  int(lsPr[1])                     #int:  min value
+                cnt['ex2']  =  int(lsPr[2])                     #int:  max value
+                cnt['ex3']  = '1'==lsPr[3]                      #bool: show text
+                cnt['ex4']  =  int(lsPr[4])                     #int:  color of background
+                cnt['ex5']  =  int(lsPr[5])                     #int:  color of foreground
+                cnt['ex6']  =  int(lsPr[6])                     #int:  color of border
             elif tp=='bevel':
-                cnt['ex0']  =  int(lsPr[0]) #int:  shape (0: sunken panel, 1: 4 separate lines - use it as border for group of controls, 2: top line, 3: bottom line, 4: left line, 5: right line, 6: no lines, empty space)
+                cnt['ex0']  =  int(lsPr[0])                     #int:  shape 
+                                                                #      (0: sunken panel
+                                                                #      ,1: 4 separate lines - use it as border for group of controls
+                                                                #      ,2: top line
+                                                                #      ,3: bottom line
+                                                                #      ,4: left line
+                                                                #      ,5: right line
+                                                                #      ,6: no lines, empty space)
             elif tp=='splitter':
-                cnt['ex0']  = '1'==lsPr[0]  #bool: beveled style
-                cnt['ex1']  = '1'==lsPr[1]  #bool: instant repainting
-                cnt['ex2']  = '1'==lsPr[2]  #bool: auto snap to edge
-                cnt['ex3']  =  int(lsPr[3]) #int:  min size
-        pass;                   log('cnt={}',(cnt)) if iflog(log4fun,_log4mod) else 0
+                cnt['ex0']  = '1'==lsPr[0]                      #bool: beveled style
+                cnt['ex1']  = '1'==lsPr[1]                      #bool: instant repainting
+                cnt['ex2']  = '1'==lsPr[2]                      #bool: auto snap to edge
+                cnt['ex3']  =  int(lsPr[3])                     #int:  min size
+        pass;                   log('cnt={}',(cnt)) if logif(log4fun,_log4mod) else 0
        #def _preprocessor
 
     def _prepare_anchors(self):
@@ -853,8 +939,59 @@ class DlgAg:
 #               pass;           log('cid,pr_={}',(cid, {k:v for k,v in pr_.items() if k in ('h','y', 'sp_t', 'sp_b', 'a_t', 'a_b')}))
        #def _prepare_anchors
 
+
+    ###############
+    ## Helpers
+    ###############
+
+    def hide(self, retval=None):
+        if self._hidden:
+            return 
+        if retval is not None:
+            self._retval = retval
+        return app.dlg_proc(self.did, app.DLG_HIDE)
+        self._hidden = True
+
+    def activate(self):
+        """ Set focus to the form """
+        return app.dlg_proc(self.did, app.DLG_FOCUS)
+    
+    def dock(self, ag_parent=None, side='b', undock=False):
+        """ [Un]Dock the form to the side of form/window.
+            ag_parent   Other form agent, None - main app window
+            side        'l', 'r', 't', 'b'
+            undock      Undock form
+        """
+        if undock:
+            app.dlg_proc(self.did, app.DLG_UNDOCK)
+            fpr     = {k:v for k,v in self.form.items() if k in ('border', 'cap')}
+            fpr     = _form_acts('move', fprs=fpr               # Move and (maybe) resize
+                                , key4store=self.opts.get('form data key'))
+            _dlg_proc(self.did, app.DLG_PROP_SET, prop=fpr)     # Push to live
+        else:
+            _form_acts('save', did=self.did
+                      ,key4store=self.opts.get('form data key'))
+            side    = side.upper() if side in ('l', 'r', 't', 'b') else 'B'
+            self.form['border'] = self.fattr('border')
+            app.dlg_proc(self.did, app.DLG_DOCK
+                        ,index=(ag_parent.did if ag_parent else 0)
+                        ,prop=side)
+       #def dock
+    
+    def fhandle(self):
+        return self.did
+    
+    def chandle(self, name):
+        return app.dlg_proc(self.did, app.DLG_CTL_HANDLE, name=name)
+
     def show_menu(self, mn_content, name, where='+h', dx=0, dy=0, repro_to_file=None):
-        """ mn_content      [{cap:'', tag:'', en:T, mark:''|'c'|'r', cmd:(lambda ag, tag:''), sub:[]}]
+        """ mn_content      [{ cap:''
+                             , tag:''
+                             , en:T
+                             , mark:''|'c'|'r'
+                             , cmd:(lambda ag, tag:'')
+                             , sub:[]}
+                            ]
             name            Control to show menu near it
             where           Menu position 
                                 '+h'    - under the control
@@ -883,10 +1020,10 @@ class DlgAg:
         return show_menu(mn_content, x, y, self, repro_to_file)
        #def show_menu
 
-    def _gen_repro_code(self):
+    def gen_repro_code(self, rtf=None):
         # Repro-code with only API calls
-        pass;                   log4fun=-1==-1  # Order log in the function
-        rtf     = self.opts.get('gen_repro_to_file', False)
+        pass;                   log4fun=0                       # Order  log in the function
+        rtf     = self.opts.get('gen_repro_to_file', False) if rtf is None else rtf
         if not rtf: return 
         rerpo_fn= tempfile.gettempdir()+os.sep+(rtf if isinstance(rtf, str) else 'repro_dlg_proc.py')
         print(f(r'exec(open(r"{}", encoding="UTF-8").read())', rerpo_fn))
@@ -898,12 +1035,13 @@ class DlgAg:
                      ,'props', 'ex0', 'ex1', 'ex2', 'ex3', 'ex4', 'ex5', 'ex6', 'ex7', 'ex8', 'ex9'
                      ,'sp_l', 'sp_r', 'sp_t', 'sp_b', 'sp_a', 'a_l', 'a_r', 'a_t', 'a_b', 'align')
                     ,('val', 'items', 'columns')
-                    ,('tp', 'b', 'r', 'tid', 'a', 'aid', 'def_bttn')
-                    ]
+                    ,('tp', 'b', 'r', 'tid', 'a', 'aid', 'def_bt')
+                  ]
         fattrs  = [  ('x', 'y', 'w', 'h', 'cap', 'tag')
-                    ,('resize', 'w_min', 'w_max', 'h_min', 'h_max', 'topmost', 'focused')
-#                   ,('vis', 'keypreview')
-                    ]
+                    ,('border', 'w_min', 'w_max', 'h_min', 'h_max', 'topmost', 'focused')
+                    ,('vis', 'keypreview')
+                    ,('frame')
+                  ]
         def out_attrs(pr, attrs, out=''):
             pr          = pr.copy()
             out         += '{'+l
@@ -968,7 +1106,15 @@ class DlgAg:
    #class DlgAg
 
 def show_menu(mn_content, x, y, ag=None, repro_to_file=None):
-    """ mn_content      [{cap:'', tag:'', en:T, mark:''|'c'|'r', cmd:(lambda ag, tag:''), sub:[]}]
+    """ mn_content      [{ cap:''
+                         , tag:''
+                         , en:T
+                         , mark:''|'c'|'r'
+                         , cmd:(lambda ag, tag:'')
+                         , sub:[]
+                         }
+                        ]
+        ag              DlgAg object
         x, y            Screen coords for menu top-left corner
         repro_to_file   File name (w/o path) to write reprocode with only menu_proc 
     """
@@ -976,27 +1122,21 @@ def show_menu(mn_content, x, y, ag=None, repro_to_file=None):
     print(f(r'exec(open(r"{}", encoding="UTF-8").read())', rfn))    if rfn else 0
     repro   = lambda line,*args,mod='a':(
                 open(rfn, mod).write(line.format(*args)+'\n')       if rfn else 0)
-    repro('import  cudatext as app', mod='w')
+    repro('import  cudatext as app', mod='w')                   # To sync conf- and repro-code
     
-    def da_mn_callbk(it):
-        pass;                  #log('it[tag]={}',(it['tag']))
+    def menu_callbk(it):
         u_callbk= it['cmd']
         upds    = u_callbk(ag, it.get('tag', ''))
-        if not ag:      return 
-        if upds is None:                                        # To hide/close
-            app.dlg_proc(ag.did, app.DLG_HIDE)
-            return
-        if not upds:    return  # No changes
-        return ag.update(upds)
-       #def da_mn_callbk
+        return ag.update(upds)  if ag else None                 # Allow to show menu w/a DlgAg
+       #def menu_callbk
             
     def fill_mn(mid_prn, its):
         for it in its:
             if it['cap']=='-':
                 app.menu_proc(  mid_prn, app.MENU_ADD, caption='-')
                 repro("app.menu_proc(m{},app.MENU_ADD, caption='-')", mid_prn)
-                continue
-            mid =(app.menu_proc(mid_prn, app.MENU_ADD, caption=it['cap'], command= lambda _it=it:da_mn_callbk(_it))     # _it=it solves lambda closure problem
+                continue#for it
+            mid =(app.menu_proc(mid_prn, app.MENU_ADD, caption=it['cap'], command= lambda _it=it:menu_callbk(_it))     # _it=it solves lambda closure problem
                     if 'cmd' in it else 
                   app.menu_proc(mid_prn, app.MENU_ADD, caption=it['cap'])
                  )
@@ -1029,40 +1169,41 @@ def show_menu(mn_content, x, y, ag=None, repro_to_file=None):
 
 OLD_PREFIX_FOR_USER_JSON = 'dlg_wrapper_fit_va_for_'
 NEW_PREFIX_FOR_USER_JSON = 'dlg_ag_va_tunning_'
-ENV2FITS= {'win':
-            {'check'      :-2
-            ,'radio'      :-2
-            ,'edit'       :-3
-            ,'button'     :-4
-            ,'combo_ro'   :-4
-            ,'combo'      :-3
-            ,'checkbutton':-5
-            ,'linklabel'  : 0
-            ,'spinedit'   :-3
-            }
-          ,'unity':
-            {'check'      :-3
-            ,'radio'      :-3
-            ,'edit'       :-5
-            ,'button'     :-4
-            ,'combo_ro'   :-5
-            ,'combo'      :-6
-            ,'checkbutton':-4
-            ,'linklabel'  : 0
-            ,'spinedit'   :-6
-            }
-          ,'mac':
-            {'check'      :-1
-            ,'radio'      :-1
-            ,'edit'       :-3
-            ,'button'     :-3
-            ,'combo_ro'   :-2
-            ,'combo'      :-3
-            ,'checkbutton':-2
-            ,'linklabel'  : 0
-            ,'spinedit'   : 0   ##??
-            }
-          }
+ENV2FITS= {
+     'win':
+        {'check'      :-2
+        ,'radio'      :-2
+        ,'edit'       :-3
+        ,'button'     :-4
+        ,'combo_ro'   :-4
+        ,'combo'      :-3
+        ,'checkbutton':-5
+        ,'linklabel'  : 0
+        ,'spinedit'   :-3
+        }
+    ,'unity':
+        {'check'      :-3
+        ,'radio'      :-3
+        ,'edit'       :-5
+        ,'button'     :-4
+        ,'combo_ro'   :-5
+        ,'combo'      :-6
+        ,'checkbutton':-4
+        ,'linklabel'  : 0
+        ,'spinedit'   :-6
+        }
+    ,'mac':
+        {'check'      :-1
+        ,'radio'      :-1
+        ,'edit'       :-3
+        ,'button'     :-3
+        ,'combo_ro'   :-2
+        ,'combo'      :-3
+        ,'checkbutton':-2
+        ,'linklabel'  : 0
+        ,'spinedit'   : 0   ##??
+        }
+    }
 
 _FIT_REDUCTIONS  = {
      'linklabel': 'label'
@@ -1080,7 +1221,7 @@ def _fit_top_by_env(what_tp, base_tp='label'):
     base_tp = _FIT_REDUCTIONS.get(base_tp, base_tp)
     if what_tp==base_tp:
         return 0
-    if (what_tp, base_tp) in _fit_top_by_env__cache:        # Ready?
+    if (what_tp, base_tp) in _fit_top_by_env__cache:            # Ready?
         pass;                  #log('cached what_tp, base_tp={}',(what_tp, base_tp))
         return _fit_top_by_env__cache[(what_tp, base_tp)]
     # Calc or restore, save in cache
@@ -1089,9 +1230,9 @@ def _fit_top_by_env(what_tp, base_tp='label'):
     fit4lb  = ENV2FITS.get(env, ENV2FITS.get('win'))
     fit     = 0
     if base_tp=='label':
-        fit = apx.get_opt(NEW_PREFIX_FOR_USER_JSON+what_tp  # Query new setting
-            , apx.get_opt(OLD_PREFIX_FOR_USER_JSON+what_tp  # Use old setting if no new one
-                         ,fit4lb.get(what_tp, 0)))          # defaulf
+        fit = apx.get_opt(NEW_PREFIX_FOR_USER_JSON+what_tp      # Query new setting
+            , apx.get_opt(OLD_PREFIX_FOR_USER_JSON+what_tp      # Use old setting if no new one
+                         ,fit4lb.get(what_tp, 0)))              # defaulf
         pass;                   fit_o=fit
         fit = _os_scale(app.DLG_PROP_GET, {'y':fit})['y']
         pass;                  #log('what_tp,fit_o,fit,h={}',(what_tp,fit_o,fit,_get_gui_height(what_tp)))
@@ -1103,41 +1244,43 @@ def _fit_top_by_env(what_tp, base_tp='label'):
 
 
 DLG_CTL_ADD_SET = 26
-_DLG_PROC_I2S={
- 0:'DLG_CREATE'
-,1:'DLG_FREE'
-,5:'DLG_SHOW_MODAL'
-,6:'DLG_SHOW_NONMODAL'
-,7:'DLG_HIDE'
-,8:'DLG_FOCUS'
-,9:'DLG_SCALE'
-,10:'DLG_PROP_GET'
-,11:'DLG_PROP_SET'
-,12:'DLG_DOCK'
-,13:'DLG_UNDOCK'
-,20:'DLG_CTL_COUNT'
-,21:'DLG_CTL_ADD'
-,26:'DLG_CTL_ADD_SET'
-,22:'DLG_CTL_PROP_GET'
-,23:'DLG_CTL_PROP_SET'
-,24:'DLG_CTL_DELETE'
-,25:'DLG_CTL_DELETE_ALL'
-,30:'DLG_CTL_FOCUS'
-,31:'DLG_CTL_FIND'
-,32:'DLG_CTL_HANDLE'
-}
+#_DLG_PROC_I2S={
+#0:'DLG_CREATE'
+#,1:'DLG_FREE'
+#,5:'DLG_SHOW_MODAL'
+#,6:'DLG_SHOW_NONMODAL'
+#,7:'DLG_HIDE'
+#,8:'DLG_FOCUS'
+#,9:'DLG_SCALE'
+#,10:'DLG_PROP_GET'
+#,11:'DLG_PROP_SET'
+#,12:'DLG_DOCK'
+#,13:'DLG_UNDOCK'
+#,20:'DLG_CTL_COUNT'
+#,21:'DLG_CTL_ADD'
+#,26:'DLG_CTL_ADD_SET'
+#,22:'DLG_CTL_PROP_GET'
+#,23:'DLG_CTL_PROP_SET'
+#,24:'DLG_CTL_DELETE'
+#,25:'DLG_CTL_DELETE_ALL'
+#,30:'DLG_CTL_FOCUS'
+#,31:'DLG_CTL_FIND'
+#,32:'DLG_CTL_HANDLE'
+#}
 _SCALED_KEYS = ('x', 'y', 'w', 'h'
             ,  'w_min', 'w_max', 'h_min', 'h_max'
             ,  'sp_l', 'sp_r', 'sp_t', 'sp_b', 'sp_a'
             )
 def _os_scale(id_action, prop=None, index=-1, index2=-1, name=''):
+    pass;                       log4fun=0                       # Order log in the function
     pass;                      #return prop
     pass;                      #log('prop={}',({k:prop[k] for k in prop if k in ('x','y')}))
     ppi     = app.app_proc(app.PROC_GET_SYSTEM_PPI, '')
     if ppi==96:
         return prop
-    scale   = ppi/96
-    pass;                      #log('id_dialog, id_action,scale={}',(id_dialog, _DLG_PROC_I2S[id_action],scale))
+    scale   = round(ppi/96, 4)
+    pass;                       log('a={}({}),scale={},¬pr={}',id_action,get_const_name(id_action,'DLG_'),scale
+                                    ,{k:prop[k] for k in prop if k in _SCALED_KEYS or k=='name'}) if logif(log4fun,_log4mod) else 0
     if False:pass
     elif id_action in (app.DLG_PROP_SET     , app.DLG_PROP_GET
                       ,app.DLG_CTL_PROP_SET , app.DLG_CTL_PROP_GET
@@ -1151,11 +1294,9 @@ def _os_scale(id_action, prop=None, index=-1, index2=-1, name=''):
         def scale_dn(prop_dct):
             for k in _SCALED_KEYS:
                 if k in prop_dct and '_ready_'+k not in prop_dct:
-#               if k in prop_dct:
                     prop_dct[k]   =             round(prop_dct[k] / scale)      # UnScale!
-#                   prop_dct[k]   =               int(prop_dct[k] / scale)      # UnScale!
         
-#       pass;                   print('a={}, ?? pr={}'.format(_DLG_PROC_I2S[id_action], {k:prop[k] for k in prop if k in _SCALED_KEYS or k=='name'}))
+#       pass;                   print('a={}, ?? pr={}'.format(get_const_name(id_action,'DLG_'), {k:prop[k] for k in prop if k in _SCALED_KEYS or k=='name'}))
         if False:pass
         elif id_action==app.DLG_PROP_SET:                   scale_up(prop)
         elif id_action==app.DLG_CTL_PROP_SET and -1!=index: scale_up(prop)
@@ -1166,7 +1307,8 @@ def _os_scale(id_action, prop=None, index=-1, index2=-1, name=''):
 
         elif id_action==  'scale':                          scale_up(prop)
         elif id_action=='unscale':                          scale_dn(prop)
-#       pass;                   print('a={}, ok pr={}'.format(_DLG_PROC_I2S[id_action], {k:prop[k] for k in prop if k in _SCALED_KEYS or k=='name'}))
+        pass;                   log('a={}, ok ¬¬¬¬pr={}', get_const_name(id_action,'DLG_')
+                                    , {k:prop[k] for k in prop if k in _SCALED_KEYS or k=='name'}) if logif(log4fun,_log4mod) else 0
     return prop
    #def _os_scale
 
@@ -1195,16 +1337,17 @@ def _get_gui_height(ctrl_type):
              'filter_listbox' 'filter_listview'
              'scrollbar'
     """
+    pass;                       log4fun=0                       # Order log in the function
     global _gui_height_cache
     if 0 == _gui_height_cache['button']:
         for tpc in _gui_height_cache:
             _gui_height_cache[tpc]   = app.app_proc(app.PROC_GET_GUI_HEIGHT, tpc)
-        pass;                  #log('_gui_height_cache={}',(_gui_height_cache))
+        pass;                  #log('_gui_height_cache={}',(_gui_height_cache)) if logif(log4fun,_log4mod) else 0
         idd=app.dlg_proc(         0,    app.DLG_CREATE)
         for tpc in _gui_height_cache:
             idc=app.dlg_proc(   idd,    app.DLG_CTL_ADD, tpc)
             if idc is None: raise ValueError('Unknown type='+tpc)
-            pass;              #log('tpc,idc={}',(tpc,idc))
+            pass;              #log('tpc,idc={}',(tpc,idc)) if logif(log4fun,_log4mod) else 0
             prc = {'name':tpc, 'x':0, 'y':0, 'w':1, 'cap':tpc
                 , 'h':_gui_height_cache[tpc]}
             if tpc in ('combo' 'combo_ro'):
@@ -1224,10 +1367,10 @@ def _get_gui_height(ctrl_type):
 
         for tpc in _gui_height_cache:
             prc = app.dlg_proc( idd,    app.DLG_CTL_PROP_GET, name=tpc)
-            pass;              #log('prc={}',(prc))
+            pass;              #log('prc={}',(prc)) if logif(log4fun,_log4mod) else 0
             _gui_height_cache[tpc]   = prc['h']
         app.dlg_proc(           idd,    app.DLG_FREE)
-        pass;                  #log('_gui_height_cache={}',(_gui_height_cache))
+        pass;                  #log('_gui_height_cache={}',(_gui_height_cache)) if logif(log4fun,_log4mod) else 0
     
     return _gui_height_cache.get(ctrl_type, app.app_proc(app.PROC_GET_GUI_HEIGHT, ctrl_type))
    #def get_gui_height
@@ -1239,8 +1382,8 @@ def _dlg_proc(id_dialog, id_action, prop='', index=-1, index2=-1, name=''):
     """
     if id_action==app.DLG_SCALE:
         return
-    pass;                       log4fun=-1== 1  # Order log in the function
-    pass;                       log('id_a={}({}), ind,ind2,n={}, prop={}',id_action, _DLG_PROC_I2S[id_action], (index, index2, name), prop) if iflog(log4fun,_log4mod) else 0
+    pass;                       log4fun=0                       # Order log in the function
+    pass;                       log('id_a={}({}), ind,ind2,n={}, prop={}',id_action, get_const_name(id_action,'DLG_'), (index, index2, name), prop) if logif(log4fun,_log4mod) else 0
     if id_action==DLG_CTL_ADD_SET:  # Join ADD and SET for a control
         ctl_ind = app.dlg_proc( id_dialog, app.DLG_CTL_ADD, name, -1, -1, '')       # type in name
         if ctl_ind is None: raise ValueError('Unknown type='+name)
@@ -1257,8 +1400,8 @@ def _dlg_proc(id_dialog, id_action, prop='', index=-1, index2=-1, name=''):
 
 def _form_acts(act, fprs=None, did=None, key4store=None):
     """ Save/Restore pos of form """
-    pass;                       log4fun=-1== 1  # Order log in the function
-    pass;                       log('act, fprs, did={}',(act, fprs, did)) if iflog(log4fun,_log4mod) else 0
+    pass;                       log4fun=0                       # Order log in the function
+    pass;                       log('act, fprs, did={}',(act, fprs, did)) if logif(log4fun,_log4mod) else 0
 
     def gen_form_key(prs):      # Gen key from form caption
         fm_cap  = prs['cap']
@@ -1268,17 +1411,18 @@ def _form_acts(act, fprs=None, did=None, key4store=None):
         
     fprs    = _dlg_proc(did, app.DLG_PROP_GET)  if act=='save' and did else fprs
     fm_key  = key4store if key4store else gen_form_key(fprs)
-    pass;                       log('fm_key, fprs={}',(fm_key, fprs)) if iflog(log4fun,_log4mod) else 0
+    pass;                       log('fm_key, fprs={}',(fm_key, fprs)) if logif(log4fun,_log4mod) else 0
     if False:pass
     elif act=='move' and fprs:
         prev    = get_hist(fm_key)
-        pass;                   log('prev={}',(prev)) if iflog(log4fun,_log4mod) else 0
+        pass;                   log('prev={}',(prev)) if logif(log4fun,_log4mod) else 0
         if not prev:    return fprs
-        if not fprs.get('resize', False):
+#       if not fprs.get('resize', False):
+        if 'resize' not in fprs.get('frame', ''):
             prev.pop('w', None)
             prev.pop('h', None)
         fprs.update(prev)
-        pass;                   log('!upd fprs={}',(fprs)) if iflog(log4fun,_log4mod) else 0
+        pass;                   log('!upd fprs={}',(fprs)) if logif(log4fun,_log4mod) else 0
         return fprs
     elif act=='save' and did:
         set_hist(fm_key, {k:v for k,v in fprs.items() if k in ('x','y','w','h')})
@@ -1420,7 +1564,7 @@ if __name__ == '__main__' :
     #   exec(open(path_to_the_file, encoding="UTF-8").read())
 
     app.app_log(app.LOG_CONSOLE_CLEAR, 'm')
-    print('Start all tests')
+#   print('Start all tests')
     if -2==-2:
         for smk in [smk for smk 
             in  sys.modules                             if 'cuda_kv_dlg.tests.test_dlg_ag' in smk]:
@@ -1428,12 +1572,12 @@ if __name__ == '__main__' :
         import                                              cuda_kv_dlg.tests.test_dlg_ag
         import unittest
         suite = unittest.TestLoader().loadTestsFromModule(  cuda_kv_dlg.tests.test_dlg_ag)
-        unittest.TextTestRunner().run(suite)
+        unittest.TextTestRunner(verbosity=0).run(suite)
         
-    if -1== 1:
-        print('Start test1: dlg: (label, edit, button), (tid, call, update, hide, on_exit)')
-        print('Stop test1')
-    print('Stop all tests')
+#   if -1== 1:
+#       print('Start test1: dlg: (label, edit, button), (tid, call, update, hide, on_exit)')
+#       print('Stop test1')
+#   print('Stop all tests')
 '''
 ToDo
 [+][kv-kv][13feb19] Extract from cd_plug_lib.py
@@ -1451,9 +1595,15 @@ ToDo
 [+][kv-kv][25feb19] Allow dict for ctrls values
 [ ][kv-kv][25feb19] Test focused in fattr
 [+][at-kv][06mar19] ag set first in all cb
-[?][at-kv][06mar19] Use "return False" as "return None" in cb
+[-][at-kv][06mar19] Use "return False" as "return None" in cb
 [ ][at-kv][06mar19] Test for panel in panel
 [+][at-kv][06mar19] def handle for control/form
 [+][at-kv][06mar19] negative_xy_as_reflex -> negative_coords_reflect
-[ ][at-kv][06mar19] nonmodal?
+[+][at-kv][06mar19] nonmodal
+[+][at-kv][06mar19] reset
+[ ][kv-kv][11mar19] ! border
+[+][kv-kv][11mar19] ? copy live vals to mem 'val' after hide ?
+[ ][kv-kv][14mar19] ? tracer via opts
+[+][kv-kv][14mar19] VERSION
+[ ][kv-kv][20mar19] i18n
 '''

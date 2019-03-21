@@ -9,5 +9,6 @@ homepage=https://github.com/kvichans/cuda_kv_dlg
 section=commands
 caption=Tuning vertical alignment for text into control pairs
 method=tuning_valigns
+menu=0
 
 

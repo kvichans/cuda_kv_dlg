@@ -1,15 +1,32 @@
 import unittest
 
-import os, tempfile
+import os, tempfile, itertools
 from cuda_kv_base import *
 from cuda_kv_dlg import *
 
-pass;                           _ONLY_HAS = ''              # Only names with the str
-pass;                          #_ONLY_HAS = 'ag_pos'        # Only names with the str
+# test_ag_1
+# test_ag_pos
+# test_ag_anchor
+# test_ag_menu
+# test_ag_repro
+# test_ag_dict
+# test_ag_dock
+# test_ag_onetime_nonmodal
+# test_ag_reset
+# test_ag_tid
+pass;                          #_ONLY_HAS = ''              # Only names with the str
+pass;                           _ONLY_HAS = 'ag_menu'        # Only names with the str
+pass;                          #_ONLY_HAS = 'ag_border'        # Only names with the str
 pass;                           _ONLY_LIST= []              # Only names from the list
 pass;                          #_ONLY_LIST= ['ag_dict']     # Only names from the list
 
+def powerset(iterable):
+    "powerset([1,2,3]) --> () (1,) (2,) (3,) (1,2) (1,3) (2,3) (1,2,3)"
+    s = list(iterable)
+    return itertools.chain.from_iterable(itertools.combinations(s, r) for r in range(len(s)+1))
+
 class TestDlgAg(unittest.TestCase):
+
 
     ##############################
     def test_ag_1(self):
@@ -19,7 +36,7 @@ class TestDlgAg(unittest.TestCase):
         if                      _ONLY_HAS  and _ONLY_HAS not in test_str: return 
         if                      _ONLY_LIST and test_str[5:] not in _ONLY_LIST: return 
         val4edit    = 'Edit me'
-        pass;                   log('val4edit={}',(val4edit))
+        pass;                  #log('val4edit={}',(val4edit))
         def do_acts(ag, name, data=''):
             log('on call {}',name)
             if name=='b1':
@@ -33,12 +50,13 @@ class TestDlgAg(unittest.TestCase):
                 return []   # No changes
             if name=='b3':
                 app.msg_box('Ask something', app.MB_OKCANCEL)
+#               ag.hide('b3')
                 return None # Close dlg
             return []
         def do_exit(ag):
             nonlocal val4edit
-            val4edit = ag.cval('e1')
-        DlgAg(
+            val4edit = ag.val('e1')
+        ag  = DlgAg(
             ctrls=[0
     ,('b1',dict(tp='bttn',cap='Re&name me' ,x= 0 ,y=  0    ,w=200  ,on=do_acts))
     ,('l1',dict(tp='labl',cap='>he&re'     ,x= 0 ,tid='e1' ,w= 50))
@@ -49,9 +67,12 @@ class TestDlgAg(unittest.TestCase):
                   ][1:]
         ,   form=dict(cap=test_str               ,h=150    ,w=200)
         ,   fid='e1'    # Start focus
-        ).show(do_exit)
-        pass;                   log('val4edit={}',(val4edit))
+        )
+        (rt,vs) = ag.show(do_exit)
+        pass;                   log('rt,vs={}',(rt,vs))
+        pass;                  #log('val4edit={}',(val4edit))
         self.assertTrue(True)
+
 
     ##############################
     def test_ag_pos(self):
@@ -73,9 +94,10 @@ class TestDlgAg(unittest.TestCase):
                   ][1:]
         ,   form=dict(cap=test_str                      ,w=660              ,h=160      
                      ,resize=True)
-        ,   fid='e1'    # Start focus
+        ,   fid='edit1'    # Start focus
         ).show()
         self.assertTrue(True)
+
 
     ##############################
     def test_ag_anchor(self):
@@ -99,6 +121,7 @@ class TestDlgAg(unittest.TestCase):
         ).show()
         self.assertTrue(True)
 
+
     ##############################
     def test_ag_menu(self):
         test_str= 'test_ag_menu'
@@ -114,29 +137,31 @@ class TestDlgAg(unittest.TestCase):
             return None if tag=='m1' else []
         def do_menu(ag, name, data=''):
             mn_its = [0
-    ,dict(cap='&Close dialog'   , tag='m1'  , cmd=wnen_menu)
-    ,dict(cap='&Cmd un'         , tag='m2'  , cmd=wnen_menu             , en=False  ,key='Ctrl+Enter')
+    ,dict(cap='Clos&e dialog'   , tag='m1'                          ,key='Esc')
+    ,dict(cap='&Cmd un'         , tag='m2'              , en=False  ,key='Ctrl+Enter')
     ,dict(cap='-')
-    ,dict(cap='&Check/mark'     , tag='mc1' , cmd=wnen_menu, mark=('c' if chk else ''))           
-    ,dict(cap='&Check/mark un'  , tag='mc2'                , mark='c'   , en=False  ,key='Ctrl++')           
-    ,dict(cap='&Check/ch'       , tag='mc3' , cmd=wnen_menu, ch=chk)           
-    ,dict(cap='&Check/ch un'    , tag='mc4'                , ch=True    , en=False  ,key='Ctrl+Shift+C')           
+    ,dict(cap='Check/&mark'     , tag='mc1' , mark=('c' if chk else ''))           
+    ,dict(cap='Check/mark un'   , tag='mc2' , mark='c'  , en=False  ,key='Ctrl++')
+    ,dict(cap='Check/&ch'       , tag='mc3' , ch=chk)           
+    ,dict(cap='Check/ch un'     , tag='mc4' , ch=True   , en=False  ,key='Ctrl+Shift+C')
     ,dict(cap='-')
-    ,dict(cap='Radio group'                                             , en=False)
-    ,dict(cap='&mr1: Select me' , tag='mr1' , cmd=wnen_menu, mark=('r' if act_rd=='mr1' else ''))
-    ,dict(cap='&mr2: Select me' , tag='mr2' , cmd=wnen_menu, rd=(act_rd=='mr2'))
-    ,dict(cap='&mr3: Select me' , tag='mr3'                             , en=False)
+    ,dict(cap='Radio group'                             , en=False)
+    ,dict(cap='mr&1: Select me' , tag='mr1' , mark=('r' if act_rd=='mr1' else ''))
+    ,dict(cap='mr&2: Select me' , tag='mr2' , rd=(act_rd=='mr2'))
+    ,dict(cap='mr&3: Select me' , tag='mr3'             , en=False)
     ,dict(cap='-')
     ,dict(cap='&Sub', sub=
         [0
-    ,dict(cap='Sub &1'          , tag='s1'  , cmd=wnen_menu)
+    ,dict(cap='Sub &1'          , tag='s1'  )
     ,dict(cap='-')
-    ,dict(cap='Sub &2'          , tag='s2'  , cmd=wnen_menu)
+    ,dict(cap='Sub &2'          , tag='s2'  )
         ][1:])
                     ][1:]
-            where, dx, dy   = ('dxdy', 7+data['x'], 7+data['y']) \
+            set_all_for_tree(mn_its, 'sub', 'cmd', wnen_menu)       # All nodes have cmd
+            where, dx, dy   =(('dxdy', 7+data['x'], 7+data['y'])    # To show near cursor
                                 if type(data)==dict else \
-                              ('+h', 0, 0)
+                              ('+h', 0, 0)                          # To show under control
+                             )
             return ag.show_menu(mn_its
                 , name, where, dx, dy
                 , repro_to_file='test_ag_menu.py' if where=='dxdy' else ''
@@ -144,15 +169,16 @@ class TestDlgAg(unittest.TestCase):
         DlgAg(
             ctrls=[0
                 ,('b1',dict(tp='bttn'  ,x=0,y=  0   ,w=200          ,cap='RightClick me'
-                    ,on_menu=do_menu))
+                    ,on_menu=CBP_WODATA(do_menu)))
                 ,('m1',dict(tp='memo'  ,x=0,y= 30   ,w=200   ,h=100 ,val='RightClick \nanywhere \ninside me'
                     ,on_mouse_down=lambda ag, name, data='':
-                        do_menu(ag, name, data) if 1==data['btn'] else 0))
+                        do_menu(ag, name, data) if 1==data['btn'] else []))
                   ][1:]
         ,   form=dict(cap=test_str                  ,w=200  ,h=130)
         ,   fid='b1'    # Start focus
         ).show()
         self.assertTrue(True)
+
 
     ##############################
     def test_ag_repro(self):
@@ -174,6 +200,7 @@ class TestDlgAg(unittest.TestCase):
         ).show()
         self.assertTrue(True)
 
+
     ##############################
     def test_ag_dict(self):
         test_str= 'test_ag_dict'
@@ -186,6 +213,140 @@ class TestDlgAg(unittest.TestCase):
                           ),'_')
         ,   form=dict(cap=test_str          ,h=150   ,w=200)
         ).show()
+
+
+    ##############################
+    def test_ag_border(self):
+        test_str= 'test_ag_border'
+        if                      _ONLY_HAS not in test_str: return 
+        if                      _ONLY_LIST and test_str[5:] not in _ONLY_LIST: return 
+        ctrls=dict( l1=dict(tp='labl'  ,cap='>====' ,x=20   ,tid='e1'   ,w= 50)
+                ,   e1=dict(tp='edit'  ,val='=====' ,x=70   ,y= 10      ,w=400, a='r>')
+                ,   ms=dict(tp='labl'               ,x=20   ,y= 40      ,w=480, a='--||', au=True
+                                       ,cap='DEFAULT non-resizable border'))
+        form=dict(cap=test_str                              ,h= 90      ,w=500)
+        
+#       DlgAg(ctrls=ctrls, form=form).show(modal=False)
+        
+        ctrls['ms']['cap']  = 'DEFAULT resizable border'
+        form['frame']       = 'resize'
+#       DlgAg(ctrls=ctrls, form=form).show()
+#       DlgAg(ctrls=ctrls, form=form).gen_repro_code('test_repro_ag_border.py')
+#       DlgAg(ctrls=ctrls, form=form).gen_repro_code(True)
+        
+        tbrds   = dispose({0:0
+#                   ,app.DBORDER_NONE    : 'DBORDER_NONE     No visible border, not resizable'
+#                   ,app.DBORDER_SIZE    : 'DBORDER_SIZE     Standard resizable border'
+#                   ,app.DBORDER_SINGLE  : 'DBORDER_SINGLE   Single-line border, not resizable'
+                    ,app.DBORDER_DIALOG  : 'DBORDER_DIALOG   Standard dialog box border, not resizable'
+                    ,app.DBORDER_TOOL    : 'DBORDER_TOOL     Single-line border, not resizable with a smaller caption'
+#                   ,app.DBORDER_TOOLSIZE: 'DBORDER_TOOLSIZE Standard resizable border with a smaller caption'
+                    }, 0)
+        for brdc, brds in tbrds.items():
+            ctrls['ms']['cap']  = brds
+            form['border']      = brdc
+            DlgAg(ctrls=ctrls, form=form).show(modal=False)
+#           DlgAg(ctrls=ctrls, form=form).gen_repro_code('test_repro_ag_border.py')
+
+        del form['border']
+        frms    = [0
+                ,   'no'
+                ,   'resize'
+#               ,   'full-cap'
+                ,   'min-max'
+                ][1:]
+        for frm in powerset(frms):
+            frm    = ','.join(frm)
+#       for frm in frms:
+            ctrls['ms']['cap']  = f('frame = {}', frm)
+            form['frame']       = frm
+#           DlgAg(ctrls=ctrls, form=form).show(modal=True)
+    
+    
+    ##############################
+    def test_ag_dock(self):
+        test_str= 'test_ag_dock'
+        if                      _ONLY_HAS not in test_str: return 
+        if                      _ONLY_LIST and test_str[5:] not in _ONLY_LIST: return 
+#       agP=DlgAg(
+#           ctrls=[0
+#   ,('l1',dict(tp='labl'  ,cap='Parent dlg',x= 0   ,y=0    ,w=100  ,a='--'))
+#                 ][1:]
+#       ,   form=dict(cap=test_str                  ,h=150  ,w=200)
+##                               ,opts=dict(gen_repro_to_file='test_repro_dock_p.py')
+#       )
+        def acts(ag, name, data=''):
+            pass;              #log("ag.val('c1')={}",(ag.val('c1')))
+            ag.dock(undock=not ag.val('c1'), side='t')
+#           ag.dock(ag_parent=agP, undock=ag.val('c1'))
+#           ag.show(modal=False)   # ?
+            return []
+        agK=DlgAg(
+            ctrls=[0
+    ,('l1',dict(tp='labl'  ,cap='Kid dlg'   ,x= 0   ,y= 0   ,w= 50  ,a='--'                 ))
+    ,('c1',dict(tp='chck'  ,cap='Docked'    ,x= 0   ,y=30   ,w= 70  ,val=False,on=acts      ))
+    ,('cl',dict(tp='bttn'  ,cap='Close'     ,x=90   ,y=30   ,w= 50            ,on=CB_HIDE   ))
+                  ][1:]
+        ,   form=dict(cap='Kid dlg'                 ,h=60   ,w=200)
+#                               ,opts=dict(gen_repro_to_file='test_repro_dock_k.py')
+        )
+#       agK.dock(side='t')
+#       agK.dock(agP)
+        agK.show(modal=False)
+#       agK.show(modal=False)   # Unfortunately need
+#       agP.show()
+
+
+    ##############################
+    def test_ag_onetime_nonmodal(self):
+        test_str= 'test_ag_onetime_nonmodal'
+        if                      _ONLY_HAS not in test_str: return 
+        if                      _ONLY_LIST and test_str[5:] not in _ONLY_LIST: return 
+        ag=DlgAg(
+            ctrls=[0
+    ,('l1',dict(tp='labl'  ,cap='>====' ,x= 0  ,tid='e1' ,w= 50))
+    ,('e1',dict(tp='edit'  ,val='=====' ,x=50  ,y=  0    ,w=150))
+                  ][1:]
+        ,   form=dict(cap=test_str          ,h=150   ,w=200)
+                               #,opts=dict(gen_repro_to_file='test_repro_ag.py')
+        )
+        ag.show(onetime=False)
+        pass;                  #log('')
+        ag.show(modal=False)
+        pass;                  #log('')
+
+
+    ##############################
+    def test_ag_reset(self):
+        test_str= 'test_ag_reset'
+        if                      _ONLY_HAS not in test_str: return 
+        if                      _ONLY_LIST and test_str[5:] not in _ONLY_LIST: return 
+        def reset_to(ag, dlg):
+            return ag.reset(**dlg)
+        dlg1    = dict(
+            ctrls=[0
+    ,('l11',dict(tp='labl'  ,cap='>===1' ,x= 0  ,tid='e11',w= 50))
+    ,('e11',dict(tp='edit'  ,val='====1' ,x=50  ,y=  0    ,w=150))
+    ,('b11',dict(tp='bttn'  ,cap='show2' ,x=10  ,y=  30   ,w=180, on=lambda ag,name,data='':reset_to(ag, dlg2)))
+                  ][1:]
+        ,   form=dict(cap=test_str+'-1'         ,h=150    ,w=200)
+        ,   fid='b11'
+        )
+        dlg2    = dict(
+            ctrls=[0
+    ,('l21',dict(tp='labl'  ,cap='>===2' ,x= 0  ,tid='e21',w= 50))
+    ,('e21',dict(tp='edit'  ,val='====2' ,x=50  ,y=  0    ,w=150))
+    ,('b21',dict(tp='bttn'  ,cap='show1' ,x=10  ,y=  30   ,w=200, on=lambda ag,name,data='':reset_to(ag, dlg1)))
+                  ][1:]
+        ,   form=dict(cap=test_str+'-2'         ,h=170    ,w=220)
+        ,   fid='b21'
+        )
+        ag=DlgAg(**dlg1)
+        ag.show(onetime=False)
+        ag.reset(**dlg2)
+#       ag.gen_repro_code('test_repro_ag.py')
+        ag.show()
+
 
     ##############################
 #   def test_ag_tid(self):
