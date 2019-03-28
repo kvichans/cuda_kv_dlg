@@ -4,26 +4,32 @@ import os, tempfile, itertools
 from cuda_kv_base import *
 from cuda_kv_dlg import *
 
-# test_ag_1
-# test_ag_pos
-# test_ag_anchor
-# test_ag_menu
-# test_ag_repro
-# test_ag_dict
-# test_ag_dock
-# test_ag_onetime_nonmodal
-# test_ag_reset
-# test_ag_tid
-pass;                          #_ONLY_HAS = ''              # Only names with the str
-pass;                           _ONLY_HAS = 'ag_menu'        # Only names with the str
-pass;                          #_ONLY_HAS = 'ag_border'        # Only names with the str
-pass;                           _ONLY_LIST= []              # Only names from the list
-pass;                          #_ONLY_LIST= ['ag_dict']     # Only names from the list
+pass;                           _ONLY = []              # Only names from the list
+pass;                          #_ONLY = ['ag_1']
+pass;                          #_ONLY = ['ag_pos']
+pass;                          #_ONLY = ['ag_cattr']
+pass;                           _ONLY = ['ag_cols']
+pass;                          #_ONLY = ['ag_anchor']
+pass;                          #_ONLY = ['ag_menu']
+pass;                          #_ONLY = ['ag_repro']
+pass;                          #_ONLY = ['ag_dict']
+pass;                          #_ONLY = ['ag_border']
+pass;                          #_ONLY = ['ag_dock']
+pass;                          #_ONLY = ['ag_onetime_nonmodal']
+pass;                          #_ONLY = ['ag_reset']
+pass;                          #_ONLY = ['ag_tid']
 
 def powerset(iterable):
-    "powerset([1,2,3]) --> () (1,) (2,) (3,) (1,2) (1,3) (2,3) (1,2,3)"
+    """ 10.1.2. Itertools Recipes
+        powerset([1,2,3]) --> () (1,) (2,) (3,) (1,2) (1,3) (2,3) (1,2,3)
+    """
     s = list(iterable)
     return itertools.chain.from_iterable(itertools.combinations(s, r) for r in range(len(s)+1))
+
+class AnyClass: # From t.me/pythonetc at 01feb19
+    def __eq__(self, another):
+        return True
+ANY = AnyClass()
 
 class TestDlgAg(unittest.TestCase):
 
@@ -31,10 +37,9 @@ class TestDlgAg(unittest.TestCase):
     ##############################
     def test_ag_1(self):
         # Controls: label, edit, button
-        # Tricks: tid, >, def_bttn, call, update, hide, on_exit, cattr, cval, fid
+        # Tricks: tid, >, def_bt, call, update, hide, on_exit, cattr, cval, fid
         test_str    = 'test_ag_1'
-        if                      _ONLY_HAS  and _ONLY_HAS not in test_str: return 
-        if                      _ONLY_LIST and test_str[5:] not in _ONLY_LIST: return 
+        if                      _ONLY and test_str[5:] not in _ONLY: return
         val4edit    = 'Edit me'
         pass;                  #log('val4edit={}',(val4edit))
         def do_acts(ag, name, data=''):
@@ -63,7 +68,7 @@ class TestDlgAg(unittest.TestCase):
     ,('e1',dict(tp='edit',val=val4edit     ,x=50 ,y= 30    ,w=150))
     ,('b2',dict(tp='bttn',cap='Sh&ort me'  ,x= 0 ,y= 60    ,w=200  ,on=do_acts))
     ,('b3',dict(tp='bttn',cap='A&sk,Close' ,x= 0 ,y= 90    ,w=200  ,on=do_acts))
-    ,('cl',dict(tp='bttn',cap='Close'      ,x= 0 ,y=120    ,w=200  ,on=CB_HIDE   ,def_bttn=1))
+    ,('cl',dict(tp='bttn',cap='Close'      ,x= 0 ,y=120    ,w=200  ,on=CB_HIDE   ,def_bt=1))
                   ][1:]
         ,   form=dict(cap=test_str               ,h=150    ,w=200)
         ,   fid='e1'    # Start focus
@@ -75,10 +80,152 @@ class TestDlgAg(unittest.TestCase):
 
 
     ##############################
+    def test_ag_cattr(self):
+        test_str= 'test_ag_cattr'
+        if                      _ONLY and test_str[5:] not in _ONLY: return
+        mv  = ['memo\ttext', 'line2']
+        def do_acts(ag, name, data=''):
+            ca  = ag.cattr
+            cas = ag.cattrs
+            leq = self.assertListEqual
+            with self.assertRaises(ValueError):
+                ca('nono', 'x')
+            if name=='b1':
+#               printf('labl l.tp={} l.type={} m.tp={} m.type={}',ca('l1', 'tp'),ca('l1', 'type'),ca('l1', 'tp', live=False),ca('l1', 'type', live=False))
+                leq([ca('l1', 'tp') ,ca('l1', 'type') ,ca('l1', 'tp', live=False) ,ca('l1', 'type', live=0) ]
+                   ,['labl'            ,'label'             ,'labl'                        ,'label'         ])
+                printf('labl all={}',cas('l1'))
+#               printf('labl[au] {}',cas('l1', ['au']))
+#               printf('labl[au,x] {}',cas('l1', ['au','x']))
+#               printf('labl au={} autosize={}',ca('l1', 'au'),ca('l1', 'autosize'))
+                leq([cas('l1', ['au']), cas('l1', ['au','x']), ca('l1', 'au'), ca('l1', 'autosize') ]
+                   ,[{'au': True}        , {'au': True, 'x': ANY}  , True             , True        ])
+#               printf('labl l.x={} m.x={}',ca('l1', 'x'),ca('l1', 'x', live=0))
+#               printf('labl l.w={} m.w={}',ca('l1', 'w'),ca('l1', 'w', live=0))
+#               printf('labl l.r={} m.r={}',ca('l1', 'r'),ca('l1', 'r', live=0))
+                leq([ca('l1', 'x'),ca('l1', 'x', live=0),ca('l1', 'w'),ca('l1', 'w', live=0),ca('l1', 'r'),ca('l1', 'r', live=0)]
+                   ,[ANY          ,None                 ,ANY          ,100                  ,ANY          ,None                 ])
+
+                printf('l.cols={}',ca('v1', 'cols'))
+                printf('m.cols={}',ca('v1', 'cols', live=0))
+#               printf('l.cols_ws={}',ca('v1', 'cols_ws'))
+#               printf('m.cols_ws={}',ca('v1', 'cols_ws', live=0))
+                leq([ca('v1', 'cols_ws'), ca('v1', 'cols_ws', live=0)]
+                   ,[[ANY,ANY,ANY]      , None                       ])
+#               printf('l.[x,cols_ws]={}',cas('v1', ['x', 'cols_ws']))
+#               printf('m.[x,cols_ws]={}',cas('v1', ['x', 'cols_ws'], live=0))
+                leq([cas('v1', ['x', 'cols_ws'])        , cas('v1', ['x', 'cols_ws'], live=0)   ]
+                   ,[{'x':10, 'cols_ws':[ANY,ANY,ANY]}  , {'x':10, 'cols_ws':None}              ])
+#               printf('l.[a,cols_ws]={}',cas('v1', ['a', 'cols_ws']))
+#               printf('m.[a,cols_ws]={}',cas('v1', ['a', 'cols_ws'], live=0))
+                leq([cas('v1', ['a', 'cols_ws'])        , cas('v1', ['a', 'cols_ws'], live=0)   ]
+                   ,[{'a':'r>', 'cols_ws':[ANY,ANY,ANY]}, {'a':'r>', 'cols_ws':None}            ])
+                
+#               printf('l.fid={} m.fid={}',ag.focused(),ag.focused(0))
+                leq([ag.focused(),ag.focused(0) ]
+                   ,['b1'        ,'b1'          ])
+
+#               printf('m l.val={} m.val={}',ca('m1', 'val'),ca('m1', 'val', live=0))
+#               printf('m l.val={}',ag.val('m1'))
+#               printf('l.vals={} m.vals={}',    ag.vals(),    ag.vals(0))
+                leq([ca('m1', 'val'), ca('m1', 'val', live=0), ag.val('m1'), ag.val('m1',0) ]
+                   ,[mv             ,mv                      , mv          , mv             ])
+                leq([ag.vals()          , ag.vals(0)        ]
+                   ,[{'m1':mv, 'v1':1}  , {'m1':mv, 'v1':1} ])
+            if name=='bttn2':
+                w   = ag.fattr('w')
+                return  {'form':{'w':w+100}}
+            return []
+        def on_resize(ag,k,d):
+            pass;#print('on_resize '+test_str)
+        its = ([('h1',60),('h2',70),('h3',30)], [['a_1','a_2','a_3'],['b_1','b_2','b_3'],['c_1','c_2','c_3']])
+#       cls = [{'hd':'h1', 'al':'C', 'au':False}
+#             ,{'hd':'h2', 'al':'R', 'au':False, 'mi':40}
+#             ,{'hd':'h3', 'al':'R', 'au':True }
+#             ]
+#       ws  = [60, 70, 30]
+        DlgAg(
+            ctrls=[0
+    ,('b1',dict(tp='bttn',cap='Click me to test attrs'    
+                                            ,x=10   ,w=100  ,y=  5              ,a='--' ,au=True   ,def_bt=True    ,on=do_acts))
+    ,('l1',dict(tp='labl',cap='autosized text'       ,w=100  ,y= 30              ,a='--' ,au=True))
+    ,('m1',dict(tp='memo'                    ,x=10   ,w=180  ,y= 60      ,h=60   ,a='r>'         ))
+    ,('v1',dict(tp='livw',items=its          ,x=10   ,w=180  ,y=130      ,h=80   ,a='r>' ,grid=True  ))
+    ,('b2',dict(tp='bttn',cap='Resize form'  ,x=10   ,w=100  ,y=225              ,a='--'                            ,on=do_acts))
+                  ][1:]
+        ,   form=odct(cap=test_str                   ,w=200              ,h=300      
+                     ,on_resize=on_resize
+                     )
+        ,   vals=dict(
+                      m1=mv,
+                      v1=1,
+                     )
+        ,   fid='b1'
+        ).show()
+#       ).gen_repro_code('test_repro_cattr.py').show()
+        self.assertTrue(True)
+
+
+    ##############################
+    def test_ag_cols(self):
+        test_str= 'test_ag_cols'
+        if                      _ONLY and test_str[5:] not in _ONLY: return
+        def do_acts(ag, name, data=''):
+            ca  = ag.cattr
+            cas = ag.cattrs
+            if name=='bttn1':
+#               printf('livw l.cols={}',ca('livw1', 'cols'))
+#               printf('livw m.cols={}',ca('livw1', 'cols', live=False))
+                printf('livw l.cols_ws={}',ca('livw1', 'cols_ws'))
+                printf('livw m.cols_ws={}',ca('livw1', 'cols_ws', live=False))
+#               printf('livw l.cols_ws={}',cas('livw1', ['x', 'cols_ws']))
+#               printf('livw m.cols_ws={}',cas('livw1', ['x', 'cols_ws'], live=False))
+#               printf('livw l.cols_ws={}',cas('livw1', ['a', 'cols_ws']))
+#               printf('livw m.cols_ws={}',cas('livw1', ['a', 'cols_ws'], live=False))
+#               printf('memo l.val={}',ag.val('memo1'))
+                printf('l.vals={}',    ag.vals())
+            if name=='bttn2':
+                return  {'form':{'w':ag.fattr('w')+100}}
+            return []
+        def on_resize(ag,k,d):
+            pass;#print('on_resize '+test_str)
+        its = ([('h1',60),('h2',70),('h3',30)], [['a_1','a_2','a_3'],['b_1','b_2','b_3'],['c_1','c_2','c_3']])
+        cls = [{'hd':'h1', 'al':'C', 'au':False}
+              ,{'hd':'h2', 'al':'L', 'au':False, 'mi':40}
+              ,{'hd':'h3', 'al':'R', 'au':True }
+              ]
+        ws  = [60, 70, 30]
+        DlgAg(
+            ctrls=[0
+    ,('bttn1',dict(tp='bttn',cap='Get attrs'    ,x=10   ,w=100  ,y=  5              ,a='--' ,def_bt=True    ,on=do_acts))
+    ,('bttn2',dict(tp='bttn',cap='Resize form'  ,x=10   ,w=100  ,y= 35              ,a='--'                 ,on=do_acts))
+    ,('livw1',dict(tp='livw',items=its
+#                           ,cols=cls 
+#                           ,columns=cls 
+#                           ,cols_ws=ws         
+                                                ,x=10   ,w=180  ,y= 70      ,h=80   ,a='r>' ,grid=True  ))
+                  ][1:]
+        ,   form=odct(cap=test_str                      ,w=200              ,h=200      
+                     ,on_resize=on_resize
+                     )
+        ,   vals=dict(
+                      livw1=1,
+                     )
+        ,   fid='bttn1'
+        ,   opts=dict(foo=0
+                     ,store_col_widths=['livw1']
+                     ,auto_stretch_col={'livw1':1}
+                     ,auto_start_col_width_on_min=['livw1']
+                     )
+        ).show()
+#       ).gen_repro_code('test_repro_cols.py').show()
+        self.assertTrue(True)
+
+
+    ##############################
     def test_ag_pos(self):
         test_str= 'test_ag_pos'
-        if                      _ONLY_HAS not in test_str: return 
-        if                      _ONLY_LIST and test_str[5:] not in _ONLY_LIST: return 
+        if                      _ONLY and test_str[5:] not in _ONLY: return
         DlgAg(
             ctrls=[0
     ,('labl1',dict(tp='labl',cap='labl h=30'    ,x=  0  ,w=100  ,y=  0      ,h=30   ,border=True))
@@ -93,7 +240,7 @@ class TestDlgAg(unittest.TestCase):
     ,('lilb1',dict(tp='lilb',cap='lilb h=30'    ,x=330  ,w=100  ,y= 50      ,h=30   ,border=True))
                   ][1:]
         ,   form=dict(cap=test_str                      ,w=660              ,h=160      
-                     ,resize=True)
+                     ,frame='resize')
         ,   fid='edit1'    # Start focus
         ).show()
         self.assertTrue(True)
@@ -102,22 +249,26 @@ class TestDlgAg(unittest.TestCase):
     ##############################
     def test_ag_anchor(self):
         test_str= 'test_ag_anchor'
-        if                      _ONLY_HAS not in test_str: return 
-        if                      _ONLY_LIST and test_str[5:] not in _ONLY_LIST: return 
+        if                      _ONLY and test_str[5:] not in _ONLY: return
+        def on_resize(ag,k,d):
+            print('on_resize '+test_str)
+#           return []
         DlgAg(
             ctrls=[0
     ,('b1',dict(tp='bttn',cap='def'     ,x=  0  ,w=100  ,y=  0              ))
-    ,('l1',dict(tp='labl',cap='>def'    ,x=110  ,w= 40  ,tid='e1'           ))
-    ,('e1',dict(tp='edit',val='r>'      ,x=150  ,w= 50  ,y=  0              ,a='r>'))
-#   ,('b2',dict(tp='bttn',cap='--'      ,x= 50  ,w= 80  ,y= 60              ,a='--'))
-    ,('b3',dict(tp='bttn',cap='--'     ,_x=  0  ,w=100  ,y= 30              ,a='--'))
-    ,('m1',dict(tp='memo',val='r>b.'    ,x=  0  ,w=100  ,y= 60      ,h=60   ,a='r>b.'))
-    ,('m2',dict(tp='memo',cap='>>||'    ,x=110  ,w= 90              ,h=50   ,a='>>||'))
-    ,('cl',dict(tp='bttn',cap='>>..'    ,x= 90  ,w=110  ,y=130              ,a='>>..'))
+#   ,('l1',dict(tp='labl',cap='>def'    ,x=110  ,w= 40  ,tid='e1'           ))
+#   ,('e1',dict(tp='edit',val='r>'      ,x=150  ,w= 50  ,y=  0              ,a='r>'))
+#   ,('b3',dict(tp='bttn',cap='--'     ,_x=  0 ,_w=100  ,y= 30              ,a='--'     ,au=True))
+#   ,('m1',dict(tp='memo',val='r>b.'    ,x=  0  ,w=100  ,y= 60      ,h=60   ,a='r>b.'   ,ro_mono_brd='1,0,1'))
+#   ,('m2',dict(tp='memo',cap='>>||'    ,x=110  ,w= 90              ,h=50   ,a='>>||'   ,ro_mono_brd='1,1,0'))
+#   ,('cl',dict(tp='bttn',cap='>>..'    ,x= 90  ,w=110  ,y=130              ,a='>>..'))
                   ][1:]
-        ,   form=dict(cap=test_str              ,w=200  ,h=160      
-                     ,resize=True)
-        ,   fid='e1'    # Start focus
+        ,   form=dict(cap=test_str              ,w=200  ,h=160
+                     ,on_resize=on_resize
+#                    ,frame='resize'
+                     )
+#       ,   fid='e1'    # Start focus
+#       ).gen_repro_code('test_repro_anchor.py').show()
         ).show()
         self.assertTrue(True)
 
@@ -125,8 +276,7 @@ class TestDlgAg(unittest.TestCase):
     ##############################
     def test_ag_menu(self):
         test_str= 'test_ag_menu'
-        if                      _ONLY_HAS not in test_str: return 
-        if                      _ONLY_LIST and test_str[5:] not in _ONLY_LIST: return 
+        if                      _ONLY and test_str[5:] not in _ONLY: return
         chk     = True
         act_rd  = 'mr2'
         def wnen_menu(ag, tag):
@@ -183,8 +333,7 @@ class TestDlgAg(unittest.TestCase):
     ##############################
     def test_ag_repro(self):
         test_str= 'test_ag_repro'
-        if                      _ONLY_HAS not in test_str: return 
-        if                      _ONLY_LIST and test_str[5:] not in _ONLY_LIST: return 
+        if                      _ONLY and test_str[5:] not in _ONLY: return
         DlgAg(
             ctrls=[0
     ,('b1',dict(tp='bttn',cap='Re&name me' ,x=0  ,y=  0    ,w=200))
@@ -192,7 +341,7 @@ class TestDlgAg(unittest.TestCase):
     ,('e1',dict(tp='edit',val='Edit me'    ,x=50 ,y= 30    ,w=150))
     ,('b2',dict(tp='bttn',cap='Sh&ort me'  ,x=0  ,y= 60    ,w=200))
     ,('b3',dict(tp='bttn',cap='A&sk,Close' ,x=0  ,y= 90    ,w=200))
-    ,('cl',dict(tp='bttn',cap='Close'      ,x=0  ,y=120    ,w=200,def_bttn=1))
+    ,('cl',dict(tp='bttn',cap='Close'      ,x=0  ,y=120    ,w=200,def_bt=1))
                   ][1:]
         ,   form=dict(cap=test_str               ,h=150    ,w=200)
         ,   fid='e1'    # Start focus
@@ -204,8 +353,7 @@ class TestDlgAg(unittest.TestCase):
     ##############################
     def test_ag_dict(self):
         test_str= 'test_ag_dict'
-        if                      _ONLY_HAS not in test_str: return 
-        if                      _ONLY_LIST and test_str[5:] not in _ONLY_LIST: return 
+        if                      _ONLY and test_str[5:] not in _ONLY: return
         DlgAg(
             ctrls=dispose(dict(_=0
     ,l1=dict(tp='labl'  ,cap='>====' ,x= 0  ,tid='e1' ,w= 50)
@@ -218,18 +366,18 @@ class TestDlgAg(unittest.TestCase):
     ##############################
     def test_ag_border(self):
         test_str= 'test_ag_border'
-        if                      _ONLY_HAS not in test_str: return 
-        if                      _ONLY_LIST and test_str[5:] not in _ONLY_LIST: return 
+        if                      _ONLY and test_str[5:] not in _ONLY: return
         ctrls=dict( l1=dict(tp='labl'  ,cap='>====' ,x=20   ,tid='e1'   ,w= 50)
                 ,   e1=dict(tp='edit'  ,val='=====' ,x=70   ,y= 10      ,w=400, a='r>')
                 ,   ms=dict(tp='labl'               ,x=20   ,y= 40      ,w=480, a='--||', au=True
                                        ,cap='DEFAULT non-resizable border'))
         form=dict(cap=test_str                              ,h= 90      ,w=500)
         
-#       DlgAg(ctrls=ctrls, form=form).show(modal=False)
+#       DlgAg(ctrls=ctrls, form=form).show(modal=False)         # Default dialog border
         
+        # Core API borders
         ctrls['ms']['cap']  = 'DEFAULT resizable border'
-        form['frame']       = 'resize'
+#       form['frame']       = 'resize'
 #       DlgAg(ctrls=ctrls, form=form).show()
 #       DlgAg(ctrls=ctrls, form=form).gen_repro_code('test_repro_ag_border.py')
 #       DlgAg(ctrls=ctrls, form=form).gen_repro_code(True)
@@ -239,7 +387,7 @@ class TestDlgAg(unittest.TestCase):
 #                   ,app.DBORDER_SIZE    : 'DBORDER_SIZE     Standard resizable border'
 #                   ,app.DBORDER_SINGLE  : 'DBORDER_SINGLE   Single-line border, not resizable'
                     ,app.DBORDER_DIALOG  : 'DBORDER_DIALOG   Standard dialog box border, not resizable'
-                    ,app.DBORDER_TOOL    : 'DBORDER_TOOL     Single-line border, not resizable with a smaller caption'
+#                   ,app.DBORDER_TOOL    : 'DBORDER_TOOL     Single-line border, not resizable with a smaller caption'
 #                   ,app.DBORDER_TOOLSIZE: 'DBORDER_TOOLSIZE Standard resizable border with a smaller caption'
                     }, 0)
         for brdc, brds in tbrds.items():
@@ -248,6 +396,7 @@ class TestDlgAg(unittest.TestCase):
             DlgAg(ctrls=ctrls, form=form).show(modal=False)
 #           DlgAg(ctrls=ctrls, form=form).gen_repro_code('test_repro_ag_border.py')
 
+        # DlgAg borders
         del form['border']
         frms    = [0
                 ,   'no'
@@ -266,8 +415,7 @@ class TestDlgAg(unittest.TestCase):
     ##############################
     def test_ag_dock(self):
         test_str= 'test_ag_dock'
-        if                      _ONLY_HAS not in test_str: return 
-        if                      _ONLY_LIST and test_str[5:] not in _ONLY_LIST: return 
+        if                      _ONLY and test_str[5:] not in _ONLY: return
 #       agP=DlgAg(
 #           ctrls=[0
 #   ,('l1',dict(tp='labl'  ,cap='Parent dlg',x= 0   ,y=0    ,w=100  ,a='--'))
@@ -300,8 +448,7 @@ class TestDlgAg(unittest.TestCase):
     ##############################
     def test_ag_onetime_nonmodal(self):
         test_str= 'test_ag_onetime_nonmodal'
-        if                      _ONLY_HAS not in test_str: return 
-        if                      _ONLY_LIST and test_str[5:] not in _ONLY_LIST: return 
+        if                      _ONLY and test_str[5:] not in _ONLY: return
         ag=DlgAg(
             ctrls=[0
     ,('l1',dict(tp='labl'  ,cap='>====' ,x= 0  ,tid='e1' ,w= 50))
@@ -319,8 +466,7 @@ class TestDlgAg(unittest.TestCase):
     ##############################
     def test_ag_reset(self):
         test_str= 'test_ag_reset'
-        if                      _ONLY_HAS not in test_str: return 
-        if                      _ONLY_LIST and test_str[5:] not in _ONLY_LIST: return 
+        if                      _ONLY and test_str[5:] not in _ONLY: return
         def reset_to(ag, dlg):
             return ag.reset(**dlg)
         dlg1    = dict(

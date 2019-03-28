@@ -1,2 +1,2 @@
-0.8.01 2019-02-13
-init: Exctract from FiF\cd_plug_lib.py
+0.9.01 2019-03-28
+init: 

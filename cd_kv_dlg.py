@@ -2,7 +2,7 @@
 Authors:
     Andrey Kvichansky    (kvichans on github.com)
 Version:
-    '0.8.02 2019-03-06'
+    '0.9.01 2019-03-28'
 Content
     See github.com/kvichans/cuda_kv_dlg/wiki
 ToDo: (see end of file)
@@ -29,7 +29,7 @@ except:pass
 
 pass;                           _log4mod = LOG_FREE             # Order log in the module
     
-REDUCTIONS  = {
+_TYPE_ABBRS  = {
      'labl': 'label'
     ,'lilb': 'linklabel'
     ,'edit': 'edit'
@@ -62,8 +62,44 @@ REDUCTIONS  = {
     ,'edtr': 'editor'
     ,'stbr': 'statusbar'
     ,'btex': 'button_ex'
-    ,'cols': 'columns'
     }
+_TYPE_WITH_VALUE  = {
+     'edit'
+    ,'edit_pwd'
+    ,'spinedit'
+    ,'memo'
+    ,'radio'
+    ,'check'
+    ,'checkbutton'
+    ,'checkgroup'
+    ,'radiogroup'
+    ,'combo'
+    ,'combo_ro'
+    ,'listbox'
+    ,'checklistbox'
+    ,'listview'
+    ,'checklistview'
+    ,'tabs'
+    ,'filter_listbox'
+    ,'filter_listview'
+#   ,'grop'
+#   ,'splt'
+#   ,'pags'
+#   ,'trvw'
+#   ,'edtr'
+#   ,'stbr'
+#   ,'btex'
+    }
+_ATTR_ABBRS  = {
+     'cols': 'columns'
+    ,'au'  : 'autosize'
+    ,'ali' : 'align'
+    ,'sto' : 'tab_stop'
+    ,'tor' : 'tab_order'
+    }
+_ATTR_TP_ABBRS  = upd_dict(_ATTR_ABBRS, {'tp':'type'})
+_LIVE_ATTRS     = {'r', 'b', 'x', 'y', 'w', 'h', 'val', 'columns', 'cols', 'cols_ws', 'items'}
+_LIVE_CALC_ATTRS= {'r', 'b'}
 
 CB_HIDE = lambda ag,name,d='':None                              # Control callback to hide dlg
 def CBP_WODATA(cb_user):                                        # Callback-proxy to skip data
@@ -75,6 +111,7 @@ ALI_RT  = app.ALIGN_RIGHT
 ALI_TP  = app.ALIGN_TOP
 ALI_BT  = app.ALIGN_BOTTOM
 
+SCROLL_W= app.app_proc(app.PROC_GET_GUI_HEIGHT, 'scrollbar')
 
 class DlgAg:
     # See github.com/kvichans/cuda_kv_dlg/wiki
@@ -91,8 +128,10 @@ class DlgAg:
         """ Create dialog """
         pass;                   log4fun=0                       # Order log in the function
         # Fields
-        self._retval= None
-        self._hidden= True
+        self._retval= None                                      # Last event src-cid or user pointed val to return from show()
+        self._hidden= True                                      # State of form
+        self._onetime   = False                                 # Free form data on hide
+        self._skip_free = False                                 # To ban to free form data
 
         self.opts   = opts.copy() if opts else {}
         
@@ -106,7 +145,7 @@ class DlgAg:
        #def __init__
     
     def __del__(self):
-        if self.did:    _dlg_proc(self.did, app.DLG_FREE)
+        _dlg_proc(self.did, app.DLG_FREE)       if self.did else 0
 
     def show(self, on_exit=None, modal=True, onetime=True):
         """ Show the dialog 
@@ -121,8 +160,9 @@ class DlgAg:
         if not self.did:
             raise ValueError('Dialog data is already destroyed (see "onetime" parameter)')
         
-        self._retval= None
-        self._hidden= False
+        self._retval    = None
+        self._hidden    = False
+        self._onetime   = onetime
 
         ed_caller   = ed    if modal else None
 
@@ -130,6 +170,8 @@ class DlgAg:
             if not self.fattr('p'):         # Not docked
                 _form_acts('save', did=self.did
                           ,key4store=self.opts.get('form data key'))
+            for cid in self.opts.get('store_col_widths', []):
+                self._cols_serv('save-ws', cid=cid)
             if callable(on_exit):
                 on_exit(self)
             vals    = self.vals(live=True)  if modal else None
@@ -151,12 +193,14 @@ class DlgAg:
            #def when_close
 
         if modal:
+            pass;               log('modal') if logif(log4fun,_log4mod) else 0
             app.dlg_proc(self.did, app.DLG_SHOW_MODAL)
             return   when_close()
         # Nonmodal
         app.dlg_proc(self.did, app.DLG_PROP_SET
                     ,prop=dict(on_close=lambda idd, idc=0, data='':
                      when_close()))
+        pass;                   log('modal') if logif(log4fun,_log4mod) else 0
         app.dlg_proc(self.did, app.DLG_SHOW_NONMODAL)
         return (None, None)
        #def show
@@ -168,19 +212,15 @@ class DlgAg:
         if not live:    return self.form.get('fid')
         form    = _dlg_proc(self.did, app.DLG_PROP_GET)
         c_ind   = form.get('focused')
-        if not find:    return None
         c_pr    = _dlg_proc(self.did, app.DLG_CTL_PROP_GET, index=c_ind)
-        if not c_pr:    return None
-        return c_pr['name']
+        return c_pr['name']     if c_pr else None
        #def focused
     
     def fattr(self, attr, defv=None, live=True):
         """ Return one form property """
         if attr in ('focused', 'fid'):  return self.focused(live)
         pr  = _dlg_proc(self.did, app.DLG_PROP_GET) if live else    self.form
-        pass;                  #log('pr={}',(pr))
-        rsp = pr.get(attr, defv)
-        return rsp
+        return pr.get(attr, defv)
        #def fattr
 
     def fattrs(self, attrs=None, live=True):
@@ -191,34 +231,91 @@ class DlgAg:
                     for attr in attrs}
        #def fattrs
 
+    def _cattr(self, lpr, cid, attr, attr_=None, defv=None):
+        attr_   = attr_ if attr_ else _ATTR_TP_ABBRS.get(attr, attr)
+        pass;                  #log("cid, attr, attr_={}",(cid, attr, attr_))
+        pass;                  #log("lpr={}",(lpr))
+        if attr  not in lpr and \
+           attr_ not in lpr and \
+           attr  not in _LIVE_CALC_ATTRS:                       # Only into mem
+            mpr     = self.ctrls[cid]
+            if attr  in mpr: return mpr[attr ]
+            if attr_ in mpr: return mpr[attr_]
+            pass;              #log("cid, defv={}",(cid,defv))
+            return defv
+        if attr=='r':
+            return lpr['x'] + lpr['w']
+        if attr=='b':
+            return lpr['y'] + lpr['h']
+        rsp     = lpr.get(attr, lpr.get(attr_, defv))
+        if attr=='val' and rsp:
+            return self._take_val( cid       , rsp, defv)
+        if attr in ('cols_ws'): pass                            # See cattr/cattrs
+        if attr in ('items', 'columns', 'cols') and rsp:
+            return self._take_it_cl(cid, attr, rsp, defv)
+        pass;                  #log("name, rsp={}",(name, rsp))
+        return rsp
+       #def _cattr
+
     def cattr(self, name, attr, defv=None, live=True):
-        """ Return one the control property """
-        live= False if attr in ('type', 'p')    else live       # Unchangable
-        pr  = _dlg_proc(self.did, app.DLG_CTL_PROP_GET
-                        , name=name)            if live else    self.ctrls[name]
-        attr    = REDUCTIONS.get(attr, attr)
-        if attr not in pr:  return defv
-        rsp = pr[attr]
-        if not live:        return rsp
-        if attr=='val':     return self._take_val(name, rsp, defv)
-        return                     self._take_it_cl(name, attr, rsp, defv)
+        """ Return the attribute of the control.
+            If no the attribute return defv.
+            Take attribute value from screen (live) or from last settings (not live).
+        """
+        if name not in self.ctrls:  raise ValueError(f('Unknown name: {}', name))
+        if attr=='cols_ws':
+            return self._cols_serv('get-ws', name, live=live)
+        attr_   = _ATTR_TP_ABBRS.get(attr, attr)
+        mpr     = self.ctrls[name]
+        if not live:
+            return mpr.get(attr, mpr.get(attr_, defv))
+        else:# live:
+            # Some attrs not changable - return mem-value (if is)
+            if attr  not in _LIVE_ATTRS and attr  in mpr:   return mpr[attr ]
+            if attr_ not in _LIVE_ATTRS and attr_ in mpr:   return mpr[attr_]
+
+        lpr     = _dlg_proc(self.did, app.DLG_CTL_PROP_GET, name=name)
+        rsp     = self._cattr(lpr, name, attr, attr_)
+        return rsp
        #def cattr
 
     def cattrs(self, name, attrs=None, live=True):
-        """ Return the control properties """
-        pr  = _dlg_proc(self.did, app.DLG_CTL_PROP_GET
-                        , name=name)            if live else    self.ctrls[name]
-        attrs   = attrs if attrs else list(pr.keys())
-        pass;                  #log('pr={}',(pr))
-        rsp     = {attr:pr.get(attr) for attr in attrs 
-                    if attr not in ('type', 'p', 'val')}
-        if 'val' in attrs:
-            rsp['val']  = self._take_val(name, pr.get('val')) if live else pr.get('val')
-        if 'p' in attrs:
-            rsp['p']    = self.ctrls[name].get('p', '')
-        if 'type' in attrs:
-            rsp['type'] = self.ctrls[name]['type']
-        return rsp
+        """ Return the control attributes """
+        pass;                   log4fun=1                       # Order log in the function
+        if name not in self.ctrls:  raise ValueError(f('Unknown name: {}', name))
+        mpr     = self.ctrls[name]
+        if not live:
+            attrs   = attrs if attrs else mpr
+            return  odct([(attr
+                          ,self.cattr(name, attr, live=live) if attr=='cols_ws' else 
+                           mpr.get(attr)
+                          ) 
+                            for attr in attrs
+                         ])
+        elif attrs:# and live
+            # Are all attrs not changable? - return mem-values (if is)
+            rsp_attrs   = {}
+            for attr in attrs:
+                attr_   = _ATTR_TP_ABBRS.get(attr, attr)
+                if   attr  not in _LIVE_ATTRS and attr  in mpr:
+                    rsp_attrs[attr ]    = attr
+                elif attr_ not in _LIVE_ATTRS and attr_ in mpr:
+                    rsp_attrs[attr ]    = attr_
+                else:
+                    rsp_attrs   = None
+                    break#for
+            pass;              #log("rsp_attrs={}",(rsp_attrs))
+            if rsp_attrs:
+                return odct([(attr, mpr.get(rsp_attrs[attr])) for attr in rsp_attrs])
+        
+        lpr     = _dlg_proc(self.did, app.DLG_CTL_PROP_GET, name=name)
+        attrs   = attrs if attrs else list(lpr.keys())
+        return      odct([(attr
+                          ,self.cattr(name, attr, live=live) if attr=='cols_ws' else 
+                           self._cattr(lpr, name, attr)
+                          )
+                            for attr in attrs
+                         ])
        #def cattrs
        
     def val(self, name, live=True):
@@ -228,27 +325,29 @@ class DlgAg:
         """ Return val property for the controls 
             or (if names==None) for all controls with val
         """
-        if names:
-            return  {cid:self.cattr(cid, 'val', defv=None, live=True) 
-                        for cid in names}
-        return      {cid:self.cattr(cid, 'val', defv=None, live=True) 
-                        for (cid,cfg) in self.ctrls.items() 
-                        if 'val' in cfg}
+        names   = names \
+                    if names else \
+                  [cid  for (cid,cfg) in self.ctrls.items() 
+                        if cfg['type'] in _TYPE_WITH_VALUE]
+        return  odct([(cid, self.cattr(cid, 'val', defv=None, live=live))
+                        for cid in names])
     
 
     ###############
     ## Updaters
     ###############
-    def reset(self, ctrls, form, vals=None, fid=None):
+    def reset(self, ctrls, form, vals=None, fid=None, opts=None):
         pass;                   log4fun=0                       # Order log in the function
         _form_acts('save', did=self.did
                   ,key4store=self.opts.get('form data key'))
         app.dlg_proc(self.did, app.DLG_CTL_DELETE_ALL)
+        
+        self.opts   = opts.copy() if opts else {}
         self._setup(ctrls, form, vals, fid)
         return []
        #def reset
     
-    def update(self, upds, retval=None):
+    def update(self, upds, retval=None, opts=None):
         """ Update most of dlg props
                 upds        dict(ctrls=, form=, vals=, fid=) 
                     ctrls   [(name, {k:v})] or {name:{k:v}}
@@ -256,30 +355,38 @@ class DlgAg:
                     vals    {name:v}
                     fid     name
                             Or list of such dicts
-                retval      Value to return if dlg will hide on the update
+                retval      Value to "show()" return if form will be hidden during the update
         """
         pass;                   log4fun=0                       # Order log in the function
-        if self._hidden:
-            return 
+        pass;                   log("upds, retval, opts={}",(upds, retval, opts)) if logif(log4fun,_log4mod) else 0
+#       if self._hidden:
+#           pass;               log('skip as hidden') if logif(log4fun,_log4mod) else 0
+#           return 
         if upds is None:                                        # To hide/close
             pass;              #log('to hide') if logif(log4fun,_log4mod) else 0
-            if retval is not None:
+            if retval is not None and self._retval is None:
                 self._retval = retval
+            if  self._skip_free:
+                self._skip_free = False
+                return 
             app.dlg_proc(self.did, app.DLG_HIDE)
             self._hidden = True
-            return None
-        if isinstance(upds, bool) and not upds:
+            return
+        if upds is False:
             pass;              #log('to stop ev') if logif(log4fun,_log4mod) else 0
             return False                                        # False to cancel the current event
-        if isinstance(upds, tuple) or isinstance(upds, list) :  # Allow to use list of upd data
+#       if isinstance(upds, tuple) or isinstance(upds, list) :  # Allow to use list of upd data
+        if likeslist(upds):                                     # Allow to use list of upd data
             pass;              #log('to many upd') if logif(log4fun,_log4mod) else 0
             for upd in upds:
-                if self.update(upd) is None:
+                if self.update(upd, retval, opts=opts) is None:
                     break
             return
         cupds   = upds.get('ctrls',  [])
-        cupds   = odict(cupds)      if isinstance(cupds, tuple) or isinstance(cupds, list) else cupds
-        pass;                  #log('cupds={}',(cupds))
+#       cupds   = odct(cupds)       if isinstance(cupds, tuple) or isinstance(cupds, list)  else cupds
+        cupds   = odct(cupds)       if likeslist(cupds)                                     else cupds
+#       cupds   = odict(cupds)      if isinstance(cupds, tuple) or isinstance(cupds, list)  else cupds
+        pass;                   log('cupds={}',(cupds)) if logif(log4fun,_log4mod) else 0
         vals    = upds.get('vals', {})
         form    = upds.get('form', {})
 
@@ -288,18 +395,21 @@ class DlgAg:
         if False:pass
         elif vals and not cupds:                                # Allow to update only val in some controls
             cupds     = { cid_    :  {'val':val} for cid_, val in vals.items()}
+            pass;              #log("+vals-cupds cupds={}",(cupds))
         elif vals and     cupds:
             for cid_, val in vals.items():
                 if cid_ not in cupds:
                     cupds[cid_]   =  {'val':val}                # Merge vals to cupds
                 else:
-                    cupds[cid_]['val']    = val                 # NB! val from vals but not from cupds
+                    cupds[cid_]['val']    = val                 # NB! Prefer val from vals but not from cupds
         for cid_, cfg in cupds.items():
             cfg['tp']   = self.ctrls[cid_]['tp']                # Type is stable
             cfg['type'] = self.ctrls[cid_]['type']              # Type is stable
 
+        skip_form_upd   = opts and opts.get('_skip_form_upd' , False)
+        skip_ctrls_upd  = opts and opts.get('_skip_ctrls_upd', False)
         if form:
-            self.form.update(form)
+            self.form.update(form)      if not skip_form_upd else 0
             pass;              #log('form={}',(self.fattrs(live=F)))
             pass;              #log('form={}',(self.fattrs()))
             pass;              #log('form={}',(form))
@@ -308,21 +418,25 @@ class DlgAg:
 
         if cupds:
             for cid, new_cfg in cupds.items():
-                pass;          #log('cid, new_cfg={}',(cid, new_cfg))
+                pass;          #log('cid, new_cfg={}',(cid, new_cfg)) if logif(log4fun,_log4mod) else 0
                 
                 cfg     = self.ctrls[cid]
-                cfg.update(new_cfg)
+                pass;          #log('cfg={}',(cfg)) if logif(log4fun,_log4mod) else 0
+                cfg.update(new_cfg)     if not skip_ctrls_upd else 0
+                pass;          #log('cfg={}',(cfg)) if logif(log4fun,_log4mod) else 0
                 c_prop  = self._prepare_control_prop(cid, new_cfg, {'ctrls':cupds})
                 pass;          #log('c_prop={}',(c_prop)) if new_ctrl['type']=='listview' else None
+                pass;           log('c_prop={}',(c_prop)) if logif(log4fun,_log4mod) else 0
                 _dlg_proc(self.did, app.DLG_CTL_PROP_SET
                          ,name=cid
                          ,prop=c_prop
                          )
 
-        if 'fid' in upds:
-            self.form['fid']    = upds['fid']
+        if 'fid' in upds or 'fid' in form:
+            fid             = upds.get('fid', form.get('fid'))
+            self.form['fid']= fid
             app.dlg_proc(self.did, app.DLG_CTL_FOCUS
-                        ,name=upds['fid'])
+                        ,name=fid)
        #def update
        
     @staticmethod
@@ -330,7 +444,8 @@ class DlgAg:
         # Check cid/tid/fid in (ctrls, form, vals, fid) to exist into mem_ctrls
         if 'skip checks'!='skip checks':    return
         
-        if isinstance(ctrls, tuple) or isinstance(ctrls, list):
+#       if isinstance(ctrls, tuple) or isinstance(ctrls, list):
+        if likeslist(ctrls):
             cids    = [cid_cnt[0] for cid_cnt in ctrls]
             cids_d  = [cid for cid in cids if cids.count(cid)>1]
             if cids_d:
@@ -368,7 +483,10 @@ class DlgAg:
         """
         pass;                   log4fun=0                       # Order log in the function
         #NOTE: DlgAg init
-        self.ctrls  = odict(ctrls)  if isinstance(ctrls, tuple) or isinstance(ctrls, list) else ctrls.copy()
+#       self.ctrls  = odct(ctrls)   if type(ctrls) in (list, tuple)                         else ctrls.copy()
+#       self.ctrls  = odct(ctrls)   if isinstance(ctrls, tuple) or isinstance(ctrls, list)  else ctrls.copy()
+        self.ctrls  = odct(ctrls)   if likeslist(ctrls)                                     else ctrls.copy()
+#       self.ctrls  = odict(ctrls)  if isinstance(ctrls, tuple) or isinstance(ctrls, list)  else ctrls.copy()
         self.form   = form.copy()
         fid         = fid           if fid else form.get('fid', form.get('focused'))    # focused?
         
@@ -384,7 +502,8 @@ class DlgAg:
             if not tp:
                 raise ValueError(f('No type/tp for name: {}', cid))
             ccfg['tp']      = tp
-            ccfg['type']    = REDUCTIONS.get(tp, tp)
+            ccfg['type']    = _TYPE_ABBRS.get(tp, tp)
+            pass;              #log("tp,type={}",(tp,ccfg['type']))
             # Create control
             _dlg_proc(self.did, DLG_CTL_ADD_SET
                      ,name=ccfg['type']
@@ -394,30 +513,69 @@ class DlgAg:
         # Prepare form
         fpr             = self.form
         fpr['topmost']  = True
+        wait_resize     = 'auto_stretch_col' in self.opts       # Agent will stretch column(s)
         # Prepare callbacks
         def get_proxy_cb(u_callbk, event):
             def form_callbk(idd, key=-1, data=''):
-                upds    = user_callbk(self, key, data)
+                pass;          #log("event,wait_resize={}",(event,wait_resize))
+                if wait_resize and event=='on_resize':
+                    self.update(self._on_resize()
+                               ,opts={'_skip_ctrls_upd':True})  # Agent acts: stretch column(s), ...
+                self._skip_free = (event=='on_resize')          # Ban to close dlg by some events (on_resize,...)
+                upds    = u_callbk(self, key, data)
                 return self.update(upds)
             return form_callbk
+            
+        if wait_resize and 'on_resize' not in fpr:
+            fpr['on_resize']    = lambda ag,k,d:[]              # Empty user callback
         for on_key in [k for k in fpr if k[:3]=='on_' and callable(fpr[k])]:
-            user_callbk = fpr[on_key]
-            fpr[on_key] = get_proxy_cb(user_callbk, on_key)
-           #for on_key
+            fpr[on_key] = get_proxy_cb(fpr[on_key], on_key)
         
         self._prepare_anchors()                                 # a,aid -> a_*,sp_*
+        for cid in self.opts.get('store_col_widths', []):
+            self._cols_serv('restore-ws', cid=cid)
         self._prepare_frame()                                   # frame, border, on_resize
+        
         if fid:
             fpr['fid']  = fid                                   # Save in mem
-            app.dlg_proc(self.did, app.DLG_CTL_FOCUS, name=fid) # push to live
+            app.dlg_proc(self.did, app.DLG_CTL_FOCUS, name=fid) # Push to live
        #def _setup
+
+    def _on_resize(self):
+        pass;                  #log("",())
+        cupd    = {}
+        if 'auto_stretch_col' in self.opts:
+            for cid, stch in self.opts['auto_stretch_col'].items():
+                if cid not in self.ctrls:   continue
+                ctrl_w      = self.cattr(cid, 'w')
+                if cid in self.opts.get('auto_start_col_width_on_min', []) and \
+                   ctrl_w==self.cattr(cid, 'w', live=False):
+                    # Min width - restore mem col width
+                    col_ws      = self.cattr(cid, 'cols_ws', live=False)
+                    pass;      #log("mem ws={}",(col_ws))
+                else:
+                    cols        = self.cattr(cid, 'cols', live=False)
+                    cols        = cols      if cols else self.cattr(cid, 'cols')
+                    min_cw      = cols[stch].get('mi', 20)
+                    min_cw      = min_cw    if min_cw else 20
+                    col_ws      = self.cattr(cid, 'cols_ws')
+                    extra       = ctrl_w - len(col_ws) - SCROLL_W - sum(col_ws)
+                    pass;      #log("w,SCROLL_W,extra,stch,ws[stch]={}",(ctrl_w,SCROLL_W,extra,stch,col_ws[stch]))
+                    col_ws[stch]= max(min_cw, col_ws[stch] + extra)
+                    pass;      #log("calc ws={}",(col_ws))
+                cupd[cid]   = dict(cols_ws=col_ws)
+                pass;          #log("ws={}",(col_ws))
+        pass;                  #log("cupd={}",(cupd))
+        return {'ctrls':cupd} if cupd else []
+       #def _on_resize
 
     def _prepare_frame(self, fpr=None):
         fpr     = self.form if fpr is None else fpr
         w0,h0   = fpr['w'],fpr['h']
+        pass;                  #log("fpr['on_resize']={}",(fpr['on_resize']))
 
-        if callable(fpr.get('on_resize')):
-            fpr['frame']    = fprs.get('frame', '') + 'resize'
+        if callable(fpr.get('on_resize')) and 'resize' not in fpr.get('frame', ''):
+            fpr['frame']    = fpr.get('frame', '') + 'resize'
 
         if False:pass
         elif 'frame' not in fpr and 'border' not in fpr:
@@ -437,13 +595,20 @@ class DlgAg:
         if fpr.get('border') in (app.DBORDER_SIZE, app.DBORDER_TOOLSIZE):
             fpr['w_min']    = fpr.get('w_min', w0)
             fpr['h_min']    = fpr.get('h_min', h0)
+            fpr.pop('resize', None)
         
         # Restore prev pos/sizes
         fpr     = _form_acts('move', fprs=fpr                   # Move and (maybe) resize
                             , key4store=self.opts.get('form data key'))
-        _dlg_proc(self.did, app.DLG_PROP_SET, prop=fpr)         # Push to live
+        pass;                  #log("fpr['on_resize']={}",(fpr['on_resize']))
+        pass;                  #log("fpr={}",(fpr))
         if      'on_resize' in fpr and (fpr['w'],fpr['h']) != (w0,h0):
-            fpr['on_resize'](self)
+            pass;              #log("fpr['on_resize']={}",(fpr['on_resize']))
+            def on_show(idd,idc='',data=''):
+                self.form['on_resize'](self)
+                return []
+            fpr['on_show']  = on_show
+        _dlg_proc(self.did, app.DLG_PROP_SET, prop=fpr.copy())         # Push to live
        #def _prepare_frame
 
     def _prepare_control_prop(self, cid, ccfg, opts={}):
@@ -452,19 +617,31 @@ class DlgAg:
         pass;                   log('cid, ccfg={}',(cid, ccfg)) if logif(log4fun,_log4mod) else 0
         EXTRA_C_ATTRS   = ['tp','r','b','tid','a','aid']
         tp      = ccfg['type']
+        pass;                   log('cid, ccfg={}',(cid, ccfg)) if logif(log4fun,_log4mod) else 0
         Self._preprocessor(ccfg, tp)                            # sto -> tab_stop,...   EXTRA_C_ATTRS
-        c_pr    = {k:v for (k,v) in ccfg.items()         if k not in ['items', 'val', 'cols']+EXTRA_C_ATTRS and k[:3]!='on_'}
+        pass;                   log('cid, ccfg={}',(cid, ccfg)) if logif(log4fun,_log4mod) else 0
+        c_pr    = {k:v for (k,v) in ccfg.items()
+                    if k not in ['items', 'val', 'columns', 'cols', 'cols_ws']
+                               +EXTRA_C_ATTRS and 
+                       (k[:3]!='on_' or k=='on')}
         c_pr['name'] = cid
-        c_pr    = self._prepare_it_vl(c_pr, ccfg, opts) #if k     in ['items', 'val', 'cols']
+        pass;                   log('cid, ccfg={}',(cid, ccfg)) if logif(log4fun,_log4mod) else 0
+        c_pr    = self._prepare_vl_it_cl(c_pr, ccfg, cid, opts) #if k     in ['items', 'val', 'cols']
         
-        c_pr.update(self._prep_pos_attrs(ccfg, cid, opts.get('ctrls')))                    # r,b,tid -> x,y,w,h
+        c_pr.update(
+            self._prep_pos_attrs(ccfg, cid, opts.get('ctrls'))  # r,b,tid -> x,y,w,h
+        ) 
         pass;                   log('c_pr={}',(c_pr)) if logif(log4fun,_log4mod) else 0
+        # Remove deprecated
+        for attr in ('props',):
+            c_pr.pop(attr, None)
         
         # Prepare callbacks
         def get_proxy_cb(u_callbk, event):
             def ctrl_callbk(idd, idc, data):
                 pass;          #log('ev,idc,cid,data={}',(event,idc,cid,data))
-                if tp in ('listview',) and type(data) in (tuple, list):
+#               if tp in ('listview',) and type(data) in (tuple, list):
+                if tp in ('listview',) and likeslist(data):
                     if not data[1]: return                      # Skip event "selection loss"
                     # Crutch for Linux! Wait fix in core
                     event_val   = app.dlg_proc(idd, app.DLG_CTL_PROP_GET, index=idc)['val']
@@ -479,8 +656,7 @@ class DlgAg:
         for on_key in [k for k in ccfg if k[:3]=='on_' and callable(ccfg[k])]:
             if tp!='button':
                 c_pr['act'] = True
-            user_callbk     = ccfg[on_key]
-            c_pr[on_key]    = get_proxy_cb(user_callbk, on_key)
+            c_pr[on_key]    = get_proxy_cb(ccfg[on_key], on_key)
            #for on_key
         
         return c_pr
@@ -489,12 +665,12 @@ class DlgAg:
     def _prep_pos_attrs(self, cnt, cid, ctrls4cid=None):
         pass;                   log4fun=0                       # Order log in the function
         ctrls4cid = ctrls4cid if ctrls4cid else self.ctrls
-        reflex  = self.opts.get('negative_coords_reflect', False)
-        pass;                   log('cid, reflex, cnt={}',(cid, reflex, cnt)) if logif(log4fun,_log4mod) else 0
+        reflect  = self.opts.get('negative_coords_reflect', False)
+        pass;                   log('cid, reflect, cnt={}',(cid, reflect, cnt)) if logif(log4fun,_log4mod) else 0
         prP     =  {}
 
         cnt_ty  = ctrls4cid[cid].get('tp', ctrls4cid[cid].get('type'))
-        cnt_ty  = REDUCTIONS.get(cnt_ty, cnt_ty)
+        cnt_ty  = _TYPE_ABBRS.get(cnt_ty, cnt_ty)
         if  cnt_ty in ('label', 'linklabel'
                       ,'combo', 'combo_ro'
                       )         \
@@ -514,12 +690,12 @@ class DlgAg:
             # cid for horz-align text
             bas_cnt     = ctrls4cid[ cnt['tid']]
             bas_ty      = bas_cnt.get('tp', bas_cnt.get('type'))
-            bas_ty      = REDUCTIONS.get(bas_ty, bas_ty)
+            bas_ty      = _TYPE_ABBRS.get(bas_ty, bas_ty)
             t           = bas_cnt.get('y', 0) + _fit_top_by_env(cnt_ty, bas_ty)
             cnt['y']    = t                                     # 'tid' kills 'y'
         
-        if reflex: #NOTE: reflex
-            def do_reflex(cnt_, k, pval):
+        if reflect: #NOTE: reflect
+            def do_reflect(cnt_, k, pval):
                 if 0>cnt_.get(k, 0):
                     pass;       log('cid, k, pval, cnt_={}',(cid, k, pval, cnt_)) if logif(log4fun,_log4mod) else 0
                     cnt_[k]    = pval + cnt_[k]
@@ -530,10 +706,10 @@ class DlgAg:
             pass;               log('prnt={}',(prnt)) if logif(log4fun,_log4mod) else 0
             pass;               log('prnt_w,prnt_h={}',(prnt_w,prnt_h)) if logif(log4fun,_log4mod) else 0
             pass;               log('cnt={}',(cnt)) if logif(log4fun,_log4mod) else 0
-            do_reflex(cnt, 'x', prnt_w)
-            do_reflex(cnt, 'r', prnt_w)
-            do_reflex(cnt, 'y', prnt_h)
-            do_reflex(cnt, 'b', prnt_h)
+            do_reflect(cnt, 'x', prnt_w)
+            do_reflect(cnt, 'r', prnt_w)
+            do_reflect(cnt, 'y', prnt_h)
+            do_reflect(cnt, 'b', prnt_h)
             pass;               log('cnt={}',(cnt)) if logif(log4fun,_log4mod) else 0
 
         def calt_third(kasx, kasr, kasw, src, trg):
@@ -555,38 +731,31 @@ class DlgAg:
         
         prP = calt_third('x', 'r', 'w', cnt, prP)
         prP = calt_third('y', 'b', 'h', cnt, prP)
-#       for k in ('x', 'y'):
-#           if k in cnt:
-#               prP[k]  = cnt[k]
-#       if 'r' in cnt and 'x' in prP:
-#           prP['w']    = cnt['r'] - prP['x']   # r,x   kill w
-#       if 'w' in cnt:
-#           prP['w']    = cnt['w']
-#       if 'r' in cnt and 'w' in prP:
-#           prP['x']    = cnt['r'] - prP['w']   # r,x   kill w
-#
-#       if 'b' in cnt and 'y' in prP:
-#           prP['h']    = cnt['b'] - prP['y']
-#       if 'h' in cnt:
-#           prP['h']    = cnt['h']
-        pass;                  #log('cid, prP={}',(cid, prP))
+        pass;                  #log('cid, prP={}',(cid, prP)) if logif(log4fun,_log4mod) else 0
         return prP
        #def _prep_pos_attrs
 
-    def _prepare_it_vl(self, c_pr, cfg_ctrl, opts={}):
+    def _prepare_vl_it_cl(self, c_pr, cfg_ctrl, cid, opts={}):
         pass;                   log4fun=0                       # Order log in the function
+        pass;                   log('c_pr={}',(c_pr)) if logif(log4fun,_log4mod) else 0
+        pass;                   log('cfg_ctrl={}',(cfg_ctrl)) if logif(log4fun,_log4mod) else 0
+        pass;                   log('opts={}',(opts)) if logif(log4fun,_log4mod) else 0
         tp      = cfg_ctrl['type']
 
         if 'val' in cfg_ctrl        and opts.get('prepare val', True):
             in_val  = cfg_ctrl['val']
             if False:pass
             elif tp=='memo':
-                # For memo: "\t"-separated lines (in lines "\t" must be replaced to chr(2)) 
-                if isinstance(in_val, list):
-                    in_val = '\t'.join([v.replace('\t', chr(2)) for v in in_val])
+                # For memo: "\t"-separated lines (in lines "\t" must be replaced to chr(3)) 
+                pass;           log("tp,in_val={}",(tp,in_val)) if logif(log4fun,_log4mod) else 0
+#               if isinstance(in_val, list):
+                if likeslist(in_val):
+                    in_val = '\t'.join([v.replace('\t', chr(3)) for v in in_val])
                 else:
-                    in_val = in_val.replace('\t', chr(2)).replace('\r\n','\n').replace('\r','\n').replace('\n','\t')
-            elif tp=='checkgroup' and isinstance(in_val, list):
+                    in_val = in_val.replace('\t', chr(3)).replace('\r\n','\n').replace('\r','\n').replace('\n','\t')
+                pass;           log("tp,in_val={}",(tp,in_val)) if logif(log4fun,_log4mod) else 0
+#           elif tp=='checkgroup' and isinstance(in_val, list):
+            elif tp=='checkgroup' and likeslist(in_val):
                 # For checkgroup: ","-separated checks (values "0"/"1") 
                 in_val = ','.join(in_val)
             elif tp in ['checklistbox', 'checklistview'] and isinstance(in_val, tuple):
@@ -596,6 +765,7 @@ class DlgAg:
 
         if 'items' in cfg_ctrl        and opts.get('prepare items', True):
             items   = cfg_ctrl['items']
+            pass;               log("tp,items={}",(tp,items)) if logif(log4fun,_log4mod) else 0
             if isinstance(items, str):
                 pass
             elif tp in ['listview', 'checklistview']:
@@ -603,33 +773,41 @@ class DlgAg:
                 #   first item is column headers: title1+"="+size1 + "\r" + title2+"="+size2 + "\r" +...
                 #   other items are data: cell1+"\r"+cell2+"\r"+...
                 # ([(hd,wd)], [[cells],[cells],])
-                items   = '\t'.join(['\r'.join(['='.join((hd,sz)) for hd,sz in items[0]])]
+                items   = '\t'.join(['\r'.join(['='.join((hd,str(sz))) for hd,sz in items[0]])]
                                    +['\r'.join(row) for row in items[1]]
                                    )
             else:
                 # For combo, combo_ro, listbox, checkgroup, radiogroup, checklistbox: "\t"-separated lines
                 items   = '\t'.join(items)
+            pass;               log("items={}",(items)) if logif(log4fun,_log4mod) else 0
             c_pr['items']   = items
 
-        if 'cols' in cfg_ctrl        and opts.get('prepare cols', True):
-            cols   = cfg_ctrl['cols']
+        if ('cols' in cfg_ctrl or 'columns' in cfg_ctrl or 'cols_ws' in cfg_ctrl)   and opts.get('prepare cols', True):
+            cols    = cfg_ctrl.get('cols', cfg_ctrl.get('columns'))
+            cols    = cols if cols else self.cattr(cid, 'cols')
             cfg_ctrl['columns'] = cols
             if isinstance(cols, str):
                 pass
             else:
+                if 'cols_ws' in cfg_ctrl:
+                    cols_ws  = cfg_ctrl['cols_ws']
+                    pass;      #log("cols_ws={}",(cols_ws))
+                    if len(cols_ws)!=len(cols): raise ValueError(f('Inconsistent attribures: cols/columns and cols_ws'))
+                    for n,w in enumerate(cols_ws):
+                        cols[n]['wd']   = w
                 # For listview, checklistview: 
                 #   "\t"-separated of 
                 #       "\r"-separated 
                 #           Name, Width, Min Width, Max Width, Alignment (str), Autosize('0'/'1'), Visible('0'/'1')
                 pass;          #log('cols={}',(cols))
                 str_sc = lambda n: str(_os_scale('scale', {'w':n})['w'])
-                cols   = '\t'.join(['\r'.join([       cd[    'nm']
-                                              ,str_sc(cd[    'wd']   )
+                cols   = '\t'.join(['\r'.join([       cd[    'hd']
+                                              ,str_sc(cd.get('wd' ,0))
                                               ,str_sc(cd.get('mi' ,0))
                                               ,str_sc(cd.get('ma' ,0))
                                               ,       cd.get('al','')
                                               ,'1' if cd.get('au',False) else '0'
-                                              ,'1' if cd.get('vi',True) else '0'
+                                              ,'1' if cd.get('vi',True ) else '0'
                                               ])
                                     for cd in cols]
                                   )
@@ -638,22 +816,28 @@ class DlgAg:
             pass;              #log('isinstance(cfg_ctrl[columns], str)={}',(isinstance(cfg_ctrl['columns'], str)))
 
         return c_pr
-       #def _prepare_it_vl
+       #def _prepare_vl_it_cl
 
     def _take_val(self, name, liv_val, defv=None):
+        pass;                   log4fun=0                       # Order log in the function
+        pass;                   log("name, liv_val={}",(name, liv_val)) if logif(log4fun,_log4mod) else 0
         tp      = self.ctrls[name]['type']
         old_val = self.ctrls[name].get('val', defv)
         new_val = liv_val
         if False:pass
         elif tp=='memo':
-            # For memo: "\t"-separated lines (in lines "\t" must be replaced to chr(2)) 
-            if isinstance(old_val, list):
-                new_val = [v.replace(chr(2), '\t') for v in liv_val.split('\t')]
-               #liv_val = '\t'.join([v.replace('\t', chr(2)) for v in old_val])
+            # For memo: "\t"-separated lines (in lines "\t" must be replaced to chr(3)) 
+#           if isinstance(old_val, list):
+            if likeslist(old_val):
+#               new_val = [v.replace(chr(3), '\t') for v in liv_val.split('\t')]
+                new_val = [v.replace(chr(2), '\t')              ##!! Wait core fix
+                            .replace(chr(3), '\t') for v in liv_val.split('\t')]
+               #liv_val = '\t'.join([v.replace('\t', chr(3)) for v in old_val])
             else:
-                new_val = liv_val.replace('\t','\n').replace(chr(2), '\t')
-               #liv_val = old_val.replace('\t', chr(2)).replace('\r\n','\n').replace('\r','\n').replace('\n','\t')
-        elif tp=='checkgroup' and isinstance(old_val, list):
+                new_val = liv_val.replace('\t','\n').replace(chr(3), '\t')
+               #liv_val = old_val.replace('\t', chr(3)).replace('\r\n','\n').replace('\r','\n').replace('\n','\t')
+#       elif tp=='checkgroup' and isinstance(old_val, list):
+        elif tp=='checkgroup' and likeslist(old_val):
             # For checkgroup: ","-separated checks (values "0"/"1") 
             new_val = liv_val.split(',')
            #in_val = ','.join(in_val)
@@ -671,10 +855,10 @@ class DlgAg:
         return new_val
        #def _take_val
 
-    def _take_it_cl(self, name, attr, liv_val, defv=None):
-        tp      = self.ctrls[name]['type']
-        old_val = self.ctrls[name].get(attr, defv)
-        pass;                  #log('name, attr, isinstance(old_val, str)={}',(name, attr, isinstance(old_val, str)))
+    def _take_it_cl(self, cid, attr, liv_val, defv=None):
+        tp      = self.ctrls[cid]['type']
+        old_val = self.ctrls[cid].get(attr, defv)
+        pass;                  #log('cid, attr, isinstance(old_val, str)={}',(cid, attr, isinstance(old_val, str)))
         if isinstance(old_val, str):
             # No need parsing - config was by string
             return liv_val
@@ -694,7 +878,7 @@ class DlgAg:
                 # For combo, combo_ro, listbox, checkgroup, radiogroup, checklistbox: "\t"-separated lines
                 new_val     = new_val.split('\t')
         
-        if attr=='columns':
+        if attr in ('columns', 'cols'):
             # For listview, checklistview: 
             #   "\t"-separated of 
             #       "\r"-separated 
@@ -704,12 +888,13 @@ class DlgAg:
             new_val= [ci.split('\r')      for ci in new_val.split('\t')]
             pass;              #log('new_val={}',repr(new_val))
             int_sc = lambda s: _os_scale('unscale', {'w':int(s)})['w']
-            new_val= [dict(nm=       ci[0]
-                          ,wd=int_sc(ci[1])
-                          ,mi=int_sc(ci[2])
-                          ,ma=int_sc(ci[3])
-                          ,au='1'==  ci[4]
-                          ,vi='1'==  ci[5]
+            new_val= [odct(('hd',       ci[0])
+                          ,('wd',int_sc(ci[1]))
+                          ,('mi',int_sc(ci[2]))
+                          ,('ma',int_sc(ci[3]))
+                          ,('al',       ci[4])
+                          ,('au','1'==  ci[5])
+                          ,('vi','1'==  ci[6])
                           ) for ci in new_val]
             pass;              #log('new_val={}',(new_val))
         
@@ -720,7 +905,7 @@ class DlgAg:
     def _preprocessor(cnt, tp):
         pass;                   log4fun=0                       # Order log in the function
         pass;                   log('tp,cnt={}',(tp,cnt)) if logif(log4fun,_log4mod) else 0
-        # call -> on_???
+        # on -> on_???
         if 'on' in cnt:
             if False:pass
             elif tp in ('listview', 'treeview'):
@@ -730,9 +915,7 @@ class DlgAg:
             else:
                 cnt['on_change']    = cnt['on']
 
-        # Reductions
-        if 'ali' in cnt:
-            cnt['align'] = cnt['ali']                                   # ali -> align
+        # Joins
         if 'sp_lr' in cnt:
             cnt['sp_l'] = cnt['sp_r']               = cnt['sp_lr']
         if 'sp_lrt' in cnt:
@@ -741,14 +924,12 @@ class DlgAg:
             cnt['sp_l'] = cnt['sp_r'] = cnt['sp_b'] = cnt['sp_lrb']
 
         cnt['autosize'] = False
-        if 'au' in cnt:
-            cnt['autosize'] = cnt['au']                                 # au -> autosize
-        if 'sto' in cnt:
-            cnt['tab_stop'] = cnt['sto']                                # sto -> tab_stop
-        if 'tor' in cnt:
-            cnt['tab_order'] = cnt['tor']                               # tor -> tab_order
-        
-        # Move smth to props
+        # Abbreviations
+        for attr in _ATTR_ABBRS:
+            if attr in cnt:
+                cnt[_ATTR_ABBRS[attr]] = cnt[attr]                      # ali -> align, au -> autosize, ...
+        pass;                  #log('tp,cnt={}',(tp,cnt)) if logif(log4fun,_log4mod) else 0
+        # Copy smth to props
         if 'props' in cnt:
             pass
         elif tp=='label' and 'cap' in cnt and cnt['cap'][0]=='>':       # cap='>smth' -> cap='smth', props='1' (r-align)
@@ -771,93 +952,98 @@ class DlgAg:
         elif tp in ('edit', 'memo') and cnt.get('ro_mono_brd'):         # ro_mono_brd -> props
             cnt['props']=                   cnt['ro_mono_brd']
 
-        if 'props' in cnt and app.app_api_version()>='1.0.224':
-            # Convert props to ex0..ex9
-            #   See 'Prop "ex"' at wiki.freepascal.org/CudaText_API
-            lsPr = cnt.pop('props').split(',')
-            pass;               log('lsPr={}',(lsPr)) if logif(log4fun,_log4mod) else 0
-            if False:pass
-            elif tp=='button':
-                cnt['ex0']  = '1'==lsPr[0]                      #bool: default for Enter key
-            elif tp in ('edit', 'memo'):
-                cnt['ex0']  = '1'==lsPr[0]                      #bool: read-only
-                cnt['ex1']  = '1'==lsPr[1]                      #bool: font is monospaced
-                cnt['ex2']  = '1'==lsPr[2]                      #bool: show border
-            elif tp=='spinedit':
-                cnt['ex0']  =  int(lsPr[0])                     #int:  min value
-                cnt['ex1']  =  int(lsPr[1])                     #int:  max value
-                cnt['ex2']  =  int(lsPr[2])                     #int:  increment
-            elif tp=='label':
-                cnt['ex0']  = '1'==lsPr[0]                      #bool: right aligned
-            elif tp=='linklabel':
-                cnt['ex0']  = lsPr[0]                           #str: URL. Should not have ','. 
-                                                                #     Clicking on http:/mailto: URLs should work, result of clicking on other kinds depends on OS.
-            elif tp=='listview':
-                cnt['ex0']  = '1'==lsPr[0]                      #bool: show grid lines
-            elif tp=='tabs':
-                cnt['ex0']  = '1'==lsPr[0]                      #bool: show tabs at bottom
-            elif tp=='colorpanel':
-                cnt['ex0']  =  int(lsPr[0])                     #int:  border width (from 0)
-                cnt['ex1']  =  int(lsPr[1])                     #int:  color of fill
-                cnt['ex2']  =  int(lsPr[2])                     #int:  color of font
-                cnt['ex3']  =  int(lsPr[3])                     #int:  color of border
-            elif tp=='filter_listview':
-                cnt['ex0']  = '1'==lsPr[0]                      #bool: filter works for all columns
-            elif tp=='image':
-                cnt['ex0']  = '1'==lsPr[0]                      #bool: center picture
-                cnt['ex1']  = '1'==lsPr[1]                      #bool: stretch picture
-                cnt['ex2']  = '1'==lsPr[2]                      #bool: allow stretch in
-                cnt['ex3']  = '1'==lsPr[3]                      #bool: allow stretch out
-                cnt['ex4']  = '1'==lsPr[4]                      #bool: keep origin x, when big picture clipped
-                cnt['ex5']  = '1'==lsPr[5]                      #bool: keep origin y, when big picture clipped
-            elif tp=='trackbar':
-                cnt['ex0']  =  int(lsPr[0])                     #int:  orientation (0: horz, 1: vert)
-                cnt['ex1']  =  int(lsPr[1])                     #int:  min value
-                cnt['ex2']  =  int(lsPr[2])                     #int:  max value
-                cnt['ex3']  =  int(lsPr[3])                     #int:  line size
-                cnt['ex4']  =  int(lsPr[4])                     #int:  page size
-                cnt['ex5']  = '1'==lsPr[5]                      #bool: reversed
-                cnt['ex6']  =  int(lsPr[6])                     #int:  tick marks position 
-                                                                #      (0: bottom-right, 1: top-left, 2: both)
-                cnt['ex7']  =  int(lsPr[7])                     #int:  tick style 
-                                                                #      (0: none, 1: auto, 2: manual)
-            elif tp=='progressbar':
-                cnt['ex0']  =  int(lsPr[0])                     #int:  orientation 
-                                                                #      (0: horz, 1: vert, 2: right-to-left, 3: top-down)
-                cnt['ex1']  =  int(lsPr[1])                     #int:  min value
-                cnt['ex2']  =  int(lsPr[2])                     #int:  max value
-                cnt['ex3']  = '1'==lsPr[3]                      #bool: smooth bar
-                cnt['ex4']  =  int(lsPr[4])                     #int:  step
-                cnt['ex5']  =  int(lsPr[5])                     #int:  style (0: normal, 1: marquee)
-                cnt['ex6']  = '1'==lsPr[6]                      #bool: show text (only for some OSes)
-            elif tp=='progressbar_ex':
-                cnt['ex0']  =  int(lsPr[0])                     #int:  style 
-                                                                #      (0: text only
-                                                                #      ,1: horz bar
-                                                                #      ,2: vert bar
-                                                                #      ,3: pie
-                                                                #      ,4: needle
-                                                                #      ,5: half-pie)
-                cnt['ex1']  =  int(lsPr[1])                     #int:  min value
-                cnt['ex2']  =  int(lsPr[2])                     #int:  max value
-                cnt['ex3']  = '1'==lsPr[3]                      #bool: show text
-                cnt['ex4']  =  int(lsPr[4])                     #int:  color of background
-                cnt['ex5']  =  int(lsPr[5])                     #int:  color of foreground
-                cnt['ex6']  =  int(lsPr[6])                     #int:  color of border
-            elif tp=='bevel':
-                cnt['ex0']  =  int(lsPr[0])                     #int:  shape 
-                                                                #      (0: sunken panel
-                                                                #      ,1: 4 separate lines - use it as border for group of controls
-                                                                #      ,2: top line
-                                                                #      ,3: bottom line
-                                                                #      ,4: left line
-                                                                #      ,5: right line
-                                                                #      ,6: no lines, empty space)
-            elif tp=='splitter':
-                cnt['ex0']  = '1'==lsPr[0]                      #bool: beveled style
-                cnt['ex1']  = '1'==lsPr[1]                      #bool: instant repainting
-                cnt['ex2']  = '1'==lsPr[2]                      #bool: auto snap to edge
-                cnt['ex3']  =  int(lsPr[3])                     #int:  min size
+        # Convert props to ex0..ex9
+        #   See 'Prop "ex"' at wiki.freepascal.org/CudaText_API
+        lsPr = cnt.get('props', '')
+        lsPr = lsPr if type(lsPr)==str else '1' if lsPr else '0'
+        lsPr = lsPr.split(',')
+        pass;                   log('lsPr={}',(lsPr)) if logif(log4fun,_log4mod) else 0
+        if False:pass
+        elif tp=='button'       and 0<len(lsPr):
+            cnt['ex0']  = '1'==lsPr[0]                      #bool: default for Enter key
+        elif tp in ('edit', 'memo') \
+                                and 2<len(lsPr):
+            cnt['ex0']  = '1'==lsPr[0]                      #bool: read-only
+            cnt['ex1']  = '1'==lsPr[1]                      #bool: font is monospaced
+            cnt['ex2']  = '1'==lsPr[2]                      #bool: show border
+        elif tp=='spinedit'     and 2<len(lsPr):
+            cnt['ex0']  =  int(lsPr[0])                     #int:  min value
+            cnt['ex1']  =  int(lsPr[1])                     #int:  max value
+            cnt['ex2']  =  int(lsPr[2])                     #int:  increment
+        elif tp=='label'        and 0<len(lsPr):
+            cnt['ex0']  = '1'==lsPr[0]                      #bool: right aligned
+        elif tp=='linklabel'    and 0<len(lsPr):
+            cnt['ex0']  =      lsPr[0]                      #str: URL. Should not have ','. 
+                                                            #     Clicking on http:/mailto: URLs should work, result of clicking on other kinds depends on OS.
+        elif tp=='listview'     and 0<len(lsPr):
+            cnt['ex0']  = '1'==lsPr[0]                      #bool: show grid lines
+        elif tp=='tabs'         and 0<len(lsPr):
+            cnt['ex0']  = '1'==lsPr[0]                      #bool: show tabs at bottom
+        elif tp=='colorpanel'   and 3<len(lsPr):
+            cnt['ex0']  =  int(lsPr[0])                     #int:  border width (from 0)
+            cnt['ex1']  =  int(lsPr[1])                     #int:  color of fill
+            cnt['ex2']  =  int(lsPr[2])                     #int:  color of font
+            cnt['ex3']  =  int(lsPr[3])                     #int:  color of border
+        elif tp=='filter_listview' \
+                                and 0<len(lsPr):
+            cnt['ex0']  = '1'==lsPr[0]                      #bool: filter works for all columns
+        elif tp=='image'        and 5<len(lsPr):
+            cnt['ex0']  = '1'==lsPr[0]                      #bool: center picture
+            cnt['ex1']  = '1'==lsPr[1]                      #bool: stretch picture
+            cnt['ex2']  = '1'==lsPr[2]                      #bool: allow stretch in
+            cnt['ex3']  = '1'==lsPr[3]                      #bool: allow stretch out
+            cnt['ex4']  = '1'==lsPr[4]                      #bool: keep origin x, when big picture clipped
+            cnt['ex5']  = '1'==lsPr[5]                      #bool: keep origin y, when big picture clipped
+        elif tp=='trackbar'     and 7<len(lsPr):
+            cnt['ex0']  =  int(lsPr[0])                     #int:  orientation (0: horz, 1: vert)
+            cnt['ex1']  =  int(lsPr[1])                     #int:  min value
+            cnt['ex2']  =  int(lsPr[2])                     #int:  max value
+            cnt['ex3']  =  int(lsPr[3])                     #int:  line size
+            cnt['ex4']  =  int(lsPr[4])                     #int:  page size
+            cnt['ex5']  = '1'==lsPr[5]                      #bool: reversed
+            cnt['ex6']  =  int(lsPr[6])                     #int:  tick marks position 
+                                                            #      (0: bottom-right, 1: top-left, 2: both)
+            cnt['ex7']  =  int(lsPr[7])                     #int:  tick style 
+                                                            #      (0: none, 1: auto, 2: manual)
+        elif tp=='progressbar'  and 7<len(lsPr):
+            cnt['ex0']  =  int(lsPr[0])                     #int:  orientation 
+                                                            #      (0: horz, 1: vert, 2: right-to-left, 3: top-down)
+            cnt['ex1']  =  int(lsPr[1])                     #int:  min value
+            cnt['ex2']  =  int(lsPr[2])                     #int:  max value
+            cnt['ex3']  = '1'==lsPr[3]                      #bool: smooth bar
+            cnt['ex4']  =  int(lsPr[4])                     #int:  step
+            cnt['ex5']  =  int(lsPr[5])                     #int:  style (0: normal, 1: marquee)
+            cnt['ex6']  = '1'==lsPr[6]                      #bool: show text (only for some OSes)
+        elif tp=='progressbar_ex' \
+                                and 6<len(lsPr):
+            cnt['ex0']  =  int(lsPr[0])                     #int:  style 
+                                                            #      (0: text only
+                                                            #      ,1: horz bar
+                                                            #      ,2: vert bar
+                                                            #      ,3: pie
+                                                            #      ,4: needle
+                                                            #      ,5: half-pie)
+            cnt['ex1']  =  int(lsPr[1])                     #int:  min value
+            cnt['ex2']  =  int(lsPr[2])                     #int:  max value
+            cnt['ex3']  = '1'==lsPr[3]                      #bool: show text
+            cnt['ex4']  =  int(lsPr[4])                     #int:  color of background
+            cnt['ex5']  =  int(lsPr[5])                     #int:  color of foreground
+            cnt['ex6']  =  int(lsPr[6])                     #int:  color of border
+        elif tp=='bevel'        and 0<len(lsPr):
+            cnt['ex0']  =  int(lsPr[0])                     #int:  shape 
+                                                            #      (0: sunken panel
+                                                            #      ,1: 4 separate lines - use it as border for group of controls
+                                                            #      ,2: top line
+                                                            #      ,3: bottom line
+                                                            #      ,4: left line
+                                                            #      ,5: right line
+                                                            #      ,6: no lines, empty space)
+        elif tp=='splitter'     and 3<len(lsPr):
+            cnt['ex0']  = '1'==lsPr[0]                      #bool: beveled style
+            cnt['ex1']  = '1'==lsPr[1]                      #bool: instant repainting
+            cnt['ex2']  = '1'==lsPr[2]                      #bool: auto snap to edge
+            cnt['ex3']  =  int(lsPr[3])                     #int:  min size
+
         pass;                   log('cnt={}',(cnt)) if logif(log4fun,_log4mod) else 0
        #def _preprocessor
 
@@ -941,14 +1127,66 @@ class DlgAg:
 
 
     ###############
+    ## Services
+    ###############
+
+    def _cols_serv(self, what, cid=None, live=True, data=None):
+        pass;                   log4fun=0                       # Order log in the function
+        pass;                   log('what, cid, live, data={}',(what, cid, live, data)) if logif(log4fun,_log4mod) else 0
+
+        if what=='get-ws':                                      # Return col widths [w1, w2, ...] for the control
+            if live:
+                cols    = self.cattr(cid, 'cols')
+                return [ci['wd'] for ci in cols]    if cols else None
+            cpr     = self.ctrls[cid]
+            pass;              #log("cpr={}",(cpr))
+            if 'cols_ws' in cpr:
+                return cpr['cols_ws']
+            cols    = cpr.get('cols', cpr.get('columns'))
+            if cols and all('wd' in ci for ci in cols):
+                return [ci['wd'] for ci in cols]
+            items   = cpr['items']
+            return [wd for hd,wd in items[0]]       if items else None
+
+        COL_WS_SUFFIX   = '_col_widths'
+        
+        if what=='restore-ws':                                  # Set col widths for the control from hist
+            fm_key  = _gen_form_key(self.form)
+            ws      = get_hist([fm_key, cid+COL_WS_SUFFIX])
+            if not ws:  return 
+            pass;               log('fm_key, ws={}',(fm_key, ws)) if logif(log4fun,_log4mod) else 0
+            cols    = self.cattr(cid, 'cols')
+            pass;              #log('cols={}',(cols)) if logif(log4fun,_log4mod) else 0
+            if len(ws)!=len(cols):  return 
+            for n,w in enumerate(ws):
+                cols[n]['wd']   = w
+            self.update({'ctrls': {cid: {'cols':cols}}}, opts={'_skip_ctrls_upd':True})
+            return 
+        
+        if what=='save-ws':                                     # Store live col widths for the control
+            ws      = self._cols_serv('get-ws', cid)
+            fm_key  = _gen_form_key(self.form)
+            pass;               log('fm_key, ws={}',(fm_key, ws)) if logif(log4fun,_log4mod) else 0
+            set_hist([fm_key, cid+COL_WS_SUFFIX], ws)
+            return 
+       #def _cols_serv
+
+
+    ###############
     ## Helpers
     ###############
 
     def hide(self, retval=None):
+        """ Hide form
+            retval      Value to "show()" return
+        """
+        if retval is not None and self._retval is None:
+            self._retval = retval
+        if  self._skip_free:
+            self._skip_free = False
+            return 
         if self._hidden:
             return 
-        if retval is not None:
-            self._retval = retval
         return app.dlg_proc(self.did, app.DLG_HIDE)
         self._hidden = True
 
@@ -1021,7 +1259,7 @@ class DlgAg:
        #def show_menu
 
     def gen_repro_code(self, rtf=None):
-        # Repro-code with only API calls
+        # Make repro-code has only core API calls
         pass;                   log4fun=0                       # Order  log in the function
         rtf     = self.opts.get('gen_repro_to_file', False) if rtf is None else rtf
         if not rtf: return 
@@ -1060,7 +1298,7 @@ class DlgAg:
             return out
         srp     =    ''
         srp    +=    'idd=dlg_proc(0, DLG_CREATE)'
-        srp    +=l
+        srp    += l
         cids    = []
         for idC in range(app.dlg_proc(self.did, app.DLG_CTL_COUNT)):
             prC = _dlg_proc(self.did, app.DLG_CTL_PROP_GET, index=idC)
@@ -1085,7 +1323,7 @@ class DlgAg:
             if prC.get('en', True):                     prC.pop('en', None)
             name = prC['name']
             c_pr = self.ctrls[name].copy()
-            c_pr = self._prepare_it_vl(c_pr, c_pr)
+            c_pr = self._prepare_vl_it_cl(c_pr, c_pr, name)
             prC.update({k:v for k,v in c_pr.items() if k not in ('callback','on','menu')})
             srp+=l+f('idc=dlg_proc(idd, DLG_CTL_ADD,"{}");dlg_proc(idd, DLG_CTL_PROP_SET, index=idc, prop={})'
                     , prC.pop('type', None), out_attrs(prC, cattrs))
@@ -1101,7 +1339,9 @@ class DlgAg:
         srp    +=l+  'dlg_proc(idd, DLG_SHOW_MODAL)'
         srp    +=l+  'dlg_proc(idd, DLG_FREE)'
         open(rerpo_fn, 'w', encoding='UTF-8').write(srp)
-       #def _gen_repro_code
+        
+        return self
+       #def gen_repro_code
 
    #class DlgAg
 
@@ -1244,29 +1484,6 @@ def _fit_top_by_env(what_tp, base_tp='label'):
 
 
 DLG_CTL_ADD_SET = 26
-#_DLG_PROC_I2S={
-#0:'DLG_CREATE'
-#,1:'DLG_FREE'
-#,5:'DLG_SHOW_MODAL'
-#,6:'DLG_SHOW_NONMODAL'
-#,7:'DLG_HIDE'
-#,8:'DLG_FOCUS'
-#,9:'DLG_SCALE'
-#,10:'DLG_PROP_GET'
-#,11:'DLG_PROP_SET'
-#,12:'DLG_DOCK'
-#,13:'DLG_UNDOCK'
-#,20:'DLG_CTL_COUNT'
-#,21:'DLG_CTL_ADD'
-#,26:'DLG_CTL_ADD_SET'
-#,22:'DLG_CTL_PROP_GET'
-#,23:'DLG_CTL_PROP_SET'
-#,24:'DLG_CTL_DELETE'
-#,25:'DLG_CTL_DELETE_ALL'
-#,30:'DLG_CTL_FOCUS'
-#,31:'DLG_CTL_FIND'
-#,32:'DLG_CTL_HANDLE'
-#}
 _SCALED_KEYS = ('x', 'y', 'w', 'h'
             ,  'w_min', 'w_max', 'h_min', 'h_max'
             ,  'sp_l', 'sp_r', 'sp_t', 'sp_b', 'sp_a'
@@ -1398,19 +1615,20 @@ def _dlg_proc(id_dialog, id_action, prop='', index=-1, index2=-1, name=''):
     return res
    #def _dlg_proc
 
+def _gen_form_key(fprs):                                        # Gen key from form caption
+    fm_cap  = fprs['cap']
+    fm_cap  = fm_cap[:fm_cap.rindex(' (')]      if ' (' in fm_cap else fm_cap
+    fm_cap  = fm_cap[:fm_cap.rindex(' [')]      if ' [' in fm_cap else fm_cap
+    return fm_cap
+   #def _gen_form_key
+        
 def _form_acts(act, fprs=None, did=None, key4store=None):
     """ Save/Restore pos of form """
     pass;                       log4fun=0                       # Order log in the function
     pass;                       log('act, fprs, did={}',(act, fprs, did)) if logif(log4fun,_log4mod) else 0
 
-    def gen_form_key(prs):      # Gen key from form caption
-        fm_cap  = prs['cap']
-        fm_cap  = fm_cap[:fm_cap.rindex(' (')]      if ' (' in fm_cap else fm_cap
-        fm_cap  = fm_cap[:fm_cap.rindex(' [')]      if ' [' in fm_cap else fm_cap
-        return fm_cap
-        
     fprs    = _dlg_proc(did, app.DLG_PROP_GET)  if act=='save' and did else fprs
-    fm_key  = key4store if key4store else gen_form_key(fprs)
+    fm_key  = key4store if key4store else _gen_form_key(fprs)
     pass;                       log('fm_key, fprs={}',(fm_key, fprs)) if logif(log4fun,_log4mod) else 0
     if False:pass
     elif act=='move' and fprs:
@@ -1425,7 +1643,9 @@ def _form_acts(act, fprs=None, did=None, key4store=None):
         pass;                   log('!upd fprs={}',(fprs)) if logif(log4fun,_log4mod) else 0
         return fprs
     elif act=='save' and did:
-        set_hist(fm_key, {k:v for k,v in fprs.items() if k in ('x','y','w','h')})
+        for (k,v) in {k:v for k,v in fprs.items() if k in ('x','y','w','h')}.items():
+            set_hist([fm_key, k], v)
+#       set_hist(fm_key, {k:v for k,v in fprs.items() if k in ('x','y','w','h')})
    #def _form_acts
 
 ######################################
@@ -1436,7 +1656,7 @@ class Command:
    #class Command:
 def dlg_tuning_valigns():
     pass;                      #log('ok')
-    rsp     = False #changed
+    changed = False
     UP,DN   = '↑↑','↓↓'
     CTRLS   = ['check'
               ,'edit'
@@ -1444,7 +1664,6 @@ def dlg_tuning_valigns():
               ,'combo_ro' 
               ,'combo'    
               ,'checkbutton'
-#             ,'linklabel'
               ,'spinedit'
               ,'radio'
               ]
@@ -1456,34 +1675,15 @@ def dlg_tuning_valigns():
                 for sp, nc in CTRLS_SP.items()}                                 # See up_dn
 
     def save():
-        nonlocal rsp
-        scam        = app.app_proc(app.PROC_GET_KEYSTATE, '')
-        if not scam:    # Save
-            changed = False
-            for sp, nc in CTRLS_SP.items():
-                fit = fits[sp]
-                if fit==_fit_top_by_env(nc): continue#for
-                apx.set_opt(NEW_PREFIX_FOR_USER_JSON+nc, fit)
-                changed = True
-               #for
-            _fit_top_by_env__clear()    if changed else 0
-            rsp = True
-            return None#hide
-            
-#       if scam=='c':   # Report
-#           rpt = 'env:'+get_desktop_environment()
-#           rpt+= c13 + c13.join(hints.values())
-#           aid_r, *_t = dlg_wrapper(_('Report'), 230,310,
-#                [dict(cid='rprt',tp='me'    ,t=5   ,l=5 ,h=200 ,w=220)
-#                ,dict(           tp='labl'    ,t=215 ,l=5        ,w=220  ,cap=_('Send the report to the address'))
-#                ,dict(cid='mail',tp='ed'    ,t=235 ,l=5        ,w=220)
-#                ,dict(           tp='labl'    ,t=265 ,l=5        ,w=150  ,cap=_('or post it on'))
-#                ,dict(cid='gith',tp='ln-lb' ,t=265 ,l=155      ,w=70   ,cap='GitHub',props='https://github.com/kvichans/cuda_fit_v_alignments/issues')
-#                ,dict(cid='-'   ,tp='bttn'    ,t=280 ,l=205-80   ,w=80   ,cap=_('Close'))
-#                ], dict(rprt=rpt
-#                       ,mail='kvichans@gmail.com')
-#                ,  focus_cid='rprt')
-        return {}
+        nonlocal changed
+        for sp, nc in CTRLS_SP.items():
+            fit = fits[sp]
+            if fit==_fit_top_by_env(nc): continue#for
+            apx.set_opt(NEW_PREFIX_FOR_USER_JSON+nc, fit)
+            changed = True
+           #for
+        _fit_top_by_env__clear()    if changed else 0
+        return None#hide
        #def save
 
     def up_dn(ag, cid, sht):
@@ -1494,8 +1694,7 @@ def dlg_tuning_valigns():
         return {'ctrls':[(cid ,dict(y=ag.cattr(cid, 'y')+sht ,hint=hints[sp] ))]}
        #def up_dn
 
-    save_h  = _('Apply the tunings to controls of all dialogs.'
-              '\rCtrl+Click  - Show data to mail report.')
+    save_h  = _('Apply the tunings to controls of all dialogs.')
     sbleq   = ' ==============='
     seqeq   = '================='
     sbl44   = ' 4444444444444444'
@@ -1505,58 +1704,57 @@ def dlg_tuning_valigns():
     cnts    = [0
     ,('lb1' ,dict(tp='labl' ,y= 10              ,x=   5 ,w=110  ,cap=cs[0]+sbleq))
     ,('ch1' ,dict(tp='chck' ,y= 10+fits['_sp1'] ,x= 115 ,w=110  ,cap=seqeq      ,hint=hints['_sp1']             ))
-    ,('up1' ,dict(tp='bttn' ,y= 10-3            ,x=-105 ,w= 50  ,cap=UP ,on=lambda cid,ag,d: up_dn(ag,'ch1',-1) ))
-    ,('dn1' ,dict(tp='bttn' ,y= 10-3            ,x= -55 ,w= 50  ,cap=DN ,on=lambda cid,ag,d: up_dn(ag,'ch1', 1) ))
+    ,('up1' ,dict(tp='bttn' ,y= 10-3            ,x=-105 ,w= 50  ,cap=UP ,on=lambda ag,cid,d: up_dn(ag,'ch1',-1) ))
+    ,('dn1' ,dict(tp='bttn' ,y= 10-3            ,x= -55 ,w= 50  ,cap=DN ,on=lambda ag,cid,d: up_dn(ag,'ch1', 1) ))
                 
     ,('lb2' ,dict(tp='labl' ,y= 40              ,x=   5 ,w=110  ,cap=cs[1]+sbleq))
     ,('ed2' ,dict(tp='edit' ,y= 40+fits['_sp2'] ,x= 115 ,w=110                  ,hint=hints['_sp2']   ,val=seqeq))
-    ,('up2' ,dict(tp='bttn' ,y= 40-3            ,x=-105 ,w= 50  ,cap=UP ,on=lambda cid,ag,d: up_dn(ag,'ed2',-1) ))
-    ,('dn2' ,dict(tp='bttn' ,y= 40-3            ,x= -55 ,w= 50  ,cap=DN ,on=lambda cid,ag,d: up_dn(ag,'ed2', 1) ))
+    ,('up2' ,dict(tp='bttn' ,y= 40-3            ,x=-105 ,w= 50  ,cap=UP ,on=lambda ag,cid,d: up_dn(ag,'ed2',-1) ))
+    ,('dn2' ,dict(tp='bttn' ,y= 40-3            ,x= -55 ,w= 50  ,cap=DN ,on=lambda ag,cid,d: up_dn(ag,'ed2', 1) ))
                 
     ,('lb3' ,dict(tp='labl' ,y= 70              ,x=   5 ,w=110  ,cap=cs[2]+sbleq))
     ,('bt3' ,dict(tp='bttn' ,y= 70+fits['_sp3'] ,x= 115 ,w=110  ,cap=seqeq      ,hint=hints['_sp3']             ))
-    ,('up3' ,dict(tp='bttn' ,y= 70-3            ,x=-105 ,w= 50  ,cap=UP ,on=lambda cid,ag,d: up_dn(ag,'bt3',-1) ))
-    ,('dn3' ,dict(tp='bttn' ,y= 70-3            ,x= -55 ,w= 50  ,cap=DN ,on=lambda cid,ag,d: up_dn(ag,'bt3', 1) ))
+    ,('up3' ,dict(tp='bttn' ,y= 70-3            ,x=-105 ,w= 50  ,cap=UP ,on=lambda ag,cid,d: up_dn(ag,'bt3',-1) ))
+    ,('dn3' ,dict(tp='bttn' ,y= 70-3            ,x= -55 ,w= 50  ,cap=DN ,on=lambda ag,cid,d: up_dn(ag,'bt3', 1) ))
                 
     ,('lb4' ,dict(tp='labl' ,y=100              ,x=   5 ,w=110  ,cap=cs[3]+sbleq))
     ,('cbo4',dict(tp='cmbr' ,y=100+fits['_sp4'] ,x= 115 ,w=110  ,items=[seqeq]  ,hint=hints['_sp4']   ,val=0   ))
-    ,('up4' ,dict(tp='bttn' ,y=100-3            ,x=-105 ,w= 50  ,cap=UP ,on=lambda cid,ag,d: up_dn(ag,'cbo4',-1)))
-    ,('dn4' ,dict(tp='bttn' ,y=100-3            ,x= -55 ,w= 50  ,cap=DN ,on=lambda cid,ag,d: up_dn(ag,'cbo4', 1)))
+    ,('up4' ,dict(tp='bttn' ,y=100-3            ,x=-105 ,w= 50  ,cap=UP ,on=lambda ag,cid,d: up_dn(ag,'cbo4',-1)))
+    ,('dn4' ,dict(tp='bttn' ,y=100-3            ,x= -55 ,w= 50  ,cap=DN ,on=lambda ag,cid,d: up_dn(ag,'cbo4', 1)))
                 
     ,('lb5' ,dict(tp='labl' ,y=130              ,x=   5 ,w=110  ,cap=cs[4]+sbleq))
     ,('cb5' ,dict(tp='cmbx' ,y=130+fits['_sp5'] ,x= 115 ,w=110  ,items=[seqeq]  ,hint=hints['_sp5']   ,val=seqeq))
-    ,('up5' ,dict(tp='bttn' ,y=130-3            ,x=-105 ,w= 50  ,cap=UP ,on=lambda cid,ag,d: up_dn(ag,'cb5',-1) ))
-    ,('dn5' ,dict(tp='bttn' ,y=130-3            ,x= -55 ,w= 50  ,cap=DN ,on=lambda cid,ag,d: up_dn(ag,'cb5', 1) ))
+    ,('up5' ,dict(tp='bttn' ,y=130-3            ,x=-105 ,w= 50  ,cap=UP ,on=lambda ag,cid,d: up_dn(ag,'cb5',-1) ))
+    ,('dn5' ,dict(tp='bttn' ,y=130-3            ,x= -55 ,w= 50  ,cap=DN ,on=lambda ag,cid,d: up_dn(ag,'cb5', 1) ))
                 
     ,('lb6' ,dict(tp='labl' ,y=160              ,x=   5 ,w=110  ,cap=cs[5]+sbleq))
     ,('chb6',dict(tp='chbt' ,y=160+fits['_sp6'] ,x= 115 ,w=110  ,cap=seqeq[:10] ,hint=hints['_sp6']             ))
-    ,('up6' ,dict(tp='bttn' ,y=160-3            ,x=-105 ,w= 50  ,cap=UP ,on=lambda cid,ag,d: up_dn(ag,'chb6',-1)))
-    ,('dn6' ,dict(tp='bttn' ,y=160-3            ,x= -55 ,w= 50  ,cap=DN ,on=lambda cid,ag,d: up_dn(ag,'chb6', 1)))
+    ,('up6' ,dict(tp='bttn' ,y=160-3            ,x=-105 ,w= 50  ,cap=UP ,on=lambda ag,cid,d: up_dn(ag,'chb6',-1)))
+    ,('dn6' ,dict(tp='bttn' ,y=160-3            ,x= -55 ,w= 50  ,cap=DN ,on=lambda ag,cid,d: up_dn(ag,'chb6', 1)))
                 
     ,('lb7' ,dict(tp='labl' ,y=190              ,x=   5 ,w=110  ,cap=cs[6]+sbl44))
     ,('sp7' ,dict(tp='sped' ,y=190+fits['_sp7'] ,x= 115 ,w=110  ,props=sped_pr  ,hint=hints['_sp7']   ,val=n4444))
-    ,('up7' ,dict(tp='bttn' ,y=190-3            ,x=-105 ,w= 50  ,cap=UP ,on=lambda cid,ag,d: up_dn(ag,'sp7',-1) ))
-    ,('dn7' ,dict(tp='bttn' ,y=190-3            ,x= -55 ,w= 50  ,cap=DN ,on=lambda cid,ag,d: up_dn(ag,'sp7', 1) ))
+    ,('up7' ,dict(tp='bttn' ,y=190-3            ,x=-105 ,w= 50  ,cap=UP ,on=lambda ag,cid,d: up_dn(ag,'sp7',-1) ))
+    ,('dn7' ,dict(tp='bttn' ,y=190-3            ,x= -55 ,w= 50  ,cap=DN ,on=lambda ag,cid,d: up_dn(ag,'sp7', 1) ))
                 
     ,('lb8' ,dict(tp='labl' ,y=220              ,x=   5 ,w=110  ,cap=cs[7]+sbleq))
     ,('rd8' ,dict(tp='rdio' ,y=220+fits['_sp8'] ,x= 115 ,w=110  ,cap=seqeq      ,hint=hints['_sp8']             ))
-    ,('up8' ,dict(tp='bttn' ,y=220-3            ,x=-105 ,w= 50  ,cap=UP ,on=lambda cid,ag,d: up_dn(ag,'rd8',-1) ))
-    ,('dn8' ,dict(tp='bttn' ,y=220-3            ,x= -55 ,w= 50  ,cap=DN ,on=lambda cid,ag,d: up_dn(ag,'rd8', 1) ))
+    ,('up8' ,dict(tp='bttn' ,y=220-3            ,x=-105 ,w= 50  ,cap=UP ,on=lambda ag,cid,d: up_dn(ag,'rd8',-1) ))
+    ,('dn8' ,dict(tp='bttn' ,y=220-3            ,x= -55 ,w= 50  ,cap=DN ,on=lambda ag,cid,d: up_dn(ag,'rd8', 1) ))
                 
-    ,('save',dict(tp='bttn' ,y=-30              ,x=-220 ,w=110  ,cap=_('&Save') ,on=lambda cid,ag,d:save() ,hint=save_h))
+    ,('save',dict(tp='bttn' ,y=-30              ,x=-220 ,w=110  ,cap=_('&Save') ,on=lambda ag,cid,d:save() ,hint=save_h))
     ,('-'   ,dict(tp='bttn' ,y=-30              ,x=-105 ,w=100  ,cap=_('Cancel'),on=CB_HIDE ))
     ][1:]
-    agent   = DlgAg(form=dict(
-                        cap=_('Tuning text vertical alignment for control pairs')
-                    ,   w=335, h=310-30)
-                ,   ctrls=cnts 
-                ,   fid = '-'
-                ,   opts={
-                        'negative_coords_reflect':True
-#                   ,   'gen_repro_to_file':'repro_tuning_valigns.py'
-                        }
-            ).show()    #NOTE: dlg_valign
-    return rsp
+    ag  = DlgAg(form=dict(
+                cap=_('Tuning text vertical alignment for control pairs')
+            ,   w=335, h=310-30)
+        ,   ctrls=cnts 
+        ,   fid = '-'
+        ,   opts={'negative_coords_reflect':True}
+        )
+#   ag.gen_repro_code('repro_tuning_valigns.py')
+    ag.show()    #NOTE: dlg_valign
+    return changed
    #def tuning_valigns
 
 if __name__ == '__main__' :
@@ -1598,12 +1796,16 @@ ToDo
 [-][at-kv][06mar19] Use "return False" as "return None" in cb
 [ ][at-kv][06mar19] Test for panel in panel
 [+][at-kv][06mar19] def handle for control/form
-[+][at-kv][06mar19] negative_xy_as_reflex -> negative_coords_reflect
+[+][at-kv][06mar19] negative_xy_as_reflect -> negative_coords_reflect
 [+][at-kv][06mar19] nonmodal
 [+][at-kv][06mar19] reset
-[ ][kv-kv][11mar19] ! border
+[ ][kv-kv][11mar19] ! border, on update
 [+][kv-kv][11mar19] ? copy live vals to mem 'val' after hide ?
 [ ][kv-kv][14mar19] ? tracer via opts
 [+][kv-kv][14mar19] VERSION
 [ ][kv-kv][20mar19] i18n
+[+][kv-kv][22mar19] Attr synonims: au/autosize, cols/columns, ...
+[+][kv-kv][24mar19] ? Auto-restore col-widths for listview and same
+[+][kv-kv][24mar19] ? Add * as col-width value for listview and same
+[ ][kv-kv][26mar19] ? Chain for more then one event-callbacks
 '''
