@@ -1,15 +1,17 @@
 import unittest
 
 import os, tempfile, itertools
-from cuda_kv_base import *
-from cuda_kv_dlg import *
+from cudatext       import *
+from cuda_kv_base   import *
+from cuda_kv_dlg    import *
 
 pass;                           _ONLY = []              # Only names from the list
 pass;                          #_ONLY = ['ag_1']
 pass;                          #_ONLY = ['ag_pos']
 pass;                          #_ONLY = ['ag_cattr']
-pass;                           _ONLY = ['ag_cols']
+pass;                          #_ONLY = ['ag_cols']
 pass;                          #_ONLY = ['ag_anchor']
+pass;                           _ONLY = ['ag_meta']
 pass;                          #_ONLY = ['ag_menu']
 pass;                          #_ONLY = ['ag_repro']
 pass;                          #_ONLY = ['ag_dict']
@@ -274,6 +276,45 @@ class TestDlgAg(unittest.TestCase):
 
 
     ##############################
+    def test_ag_meta(self):
+        test_str= 'test_ag_meta'
+        if                      _ONLY and test_str[5:] not in _ONLY: return
+        def act_on_cY():
+            app.msg_box('Done "Cmd with Ctrl|Meta hotkey"', app.MB_OK)
+            print('act_on_cY - OK')
+            return []
+        def wnen_menu(ag, tag):
+            if tag=='cY':   return act_on_cY()
+        def do_menu(ag, name, data=''):
+            mn_its = [0
+                    ,dict(cap='&Cmd with Ctrl|Meta hotkey' ,tag='cY'   ,key='Ctrl+Y')
+                    ][1:]
+            return ag.show_menu(mn_its, name, cmd4all=wnen_menu)
+           #def do_menu
+        l1_h    =('...Ctrl+Y...'
+                '\r...Ctrl+Shift+Y...'
+                '\r...Alt+Ctrl+Y...'
+                 )
+        def acts(ag, name, data=''):
+            scam= ag.scam()
+            if 'c' in scam:
+                app.msg_box('Done Ctrl|Meta+Click', app.MB_OK)
+            return []
+        DlgAg(
+            ctrls=[0
+    ,('b1',dict(tp='bttn',cap='Show menu &='        ,au=True    ,y= 10  ,a='--' ,on=do_menu,on_menu=do_menu))
+    ,('l1',dict(tp='labl',cap='Hint with Ctrl|Meta' ,au=True    ,y= 43  ,a='--' ,hint=l1_h  ))
+    ,('b2',dict(tp='bttn',cap='Wait Ctrl|Meta+Click',au=True    ,y= 70  ,a='--' ,on=acts))
+                  ][1:]
+        ,   form=dict(cap=test_str                          ,w=200  ,h=160)
+#       ,   opts={'ctrl_to_meta':'need'}
+        ,   opts={'ctrl_to_meta':'by_os'}
+        ).show()
+#       ).gen_repro_code('test_repro_anchor.py').show()
+        self.assertTrue(True)
+
+
+    ##############################
     def test_ag_menu(self):
         test_str= 'test_ag_menu'
         if                      _ONLY and test_str[5:] not in _ONLY: return
@@ -307,13 +348,14 @@ class TestDlgAg(unittest.TestCase):
     ,dict(cap='Sub &2'          , tag='s2'  )
         ][1:])
                     ][1:]
-            set_all_for_tree(mn_its, 'sub', 'cmd', wnen_menu)       # All nodes have cmd
+#           set_all_for_tree(mn_its, 'sub', 'cmd', wnen_menu)       # All nodes have cmd
             where, dx, dy   =(('dxdy', 7+data['x'], 7+data['y'])    # To show near cursor
                                 if type(data)==dict else \
                               ('+h', 0, 0)                          # To show under control
                              )
             return ag.show_menu(mn_its
                 , name, where, dx, dy
+                , cmd4all=wnen_menu                                 # All nodes have same handler
                 , repro_to_file='test_ag_menu.py' if where=='dxdy' else ''
             )
         DlgAg(

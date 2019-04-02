@@ -134,6 +134,10 @@ class DlgAg:
         self._skip_free = False                                 # To ban to free form data
 
         self.opts   = opts.copy() if opts else {}
+        ctrl_to_meta= self.opts.get('ctrl_to_meta', 'by_os')
+        self._c2m   = ctrl_to_meta=='need'  or \
+                      ctrl_to_meta=='by_os' and \
+                        'mac'==get_desktop_environment()        # Need to translate 'Ctrl+' to 'Meta+' in hint,...
         
         self.did    = app.dlg_proc(0, app.DLG_CREATE)
         self.ctrls  = None                                      # Mem-attrs of all controls {cid:{k:v}}
@@ -635,6 +639,9 @@ class DlgAg:
         # Remove deprecated
         for attr in ('props',):
             c_pr.pop(attr, None)
+        
+        if self._c2m and 'hint' in c_pr:
+            c_pr['hint']    = c_pr['hint'].replace('Ctrl+', 'Meta+')
         
         # Prepare callbacks
         def get_proxy_cb(u_callbk, event):
@@ -1176,6 +1183,12 @@ class DlgAg:
     ## Helpers
     ###############
 
+    def scam(self):
+        scam= app.app_proc(app.PROC_GET_KEYSTATE, '')
+        scam= scam.replace('m', 'c') if self._c2m else scam
+        return scam
+    
+    
     def hide(self, retval=None):
         """ Hide form
             retval      Value to "show()" return
@@ -1189,10 +1202,12 @@ class DlgAg:
             return 
         return app.dlg_proc(self.did, app.DLG_HIDE)
         self._hidden = True
-
+    
+    
     def activate(self):
         """ Set focus to the form """
         return app.dlg_proc(self.did, app.DLG_FOCUS)
+    
     
     def dock(self, ag_parent=None, side='b', undock=False):
         """ [Un]Dock the form to the side of form/window.
@@ -1216,13 +1231,16 @@ class DlgAg:
                         ,prop=side)
        #def dock
     
+    
     def fhandle(self):
         return self.did
+    
     
     def chandle(self, name):
         return app.dlg_proc(self.did, app.DLG_CTL_HANDLE, name=name)
 
-    def show_menu(self, mn_content, name, where='+h', dx=0, dy=0, repro_to_file=None):
+    
+    def show_menu(self, mn_content, name, where='+h', dx=0, dy=0, cmd4all=None, repro_to_file=None):
         """ mn_content      [{ cap:''
                              , tag:''
                              , en:T
@@ -1235,8 +1253,11 @@ class DlgAg:
                                 '+h'    - under the control
                                 '+w'    - righter the control
                                 'dxdy'  - to use dx, dy 
+            cmd4all         Handler for all nodes in mn_content
             repro_to_file   File name (w/o path) to write reprocode with only menu_proc 
         """
+        if cmd4all:
+            set_all_for_tree(mn_content, 'sub', 'cmd', cmd4all)       # All nodes have same cmd
         pr      = self.cattrs(name, ('x','y','w','h', 'p'))
         pid     = pr['p']
         while pid:
@@ -1255,7 +1276,7 @@ class DlgAg:
         x, y    = app.dlg_proc(self.did, app.DLG_COORD_LOCAL_TO_SCREEN, index=x, index2=y)
         pass;                  #log('x, y={}',(x, y))
         
-        return show_menu(mn_content, x, y, self, repro_to_file)
+        return show_menu(mn_content, x, y, self, repro_to_file, opts=dict(c2m=self._c2m))
        #def show_menu
 
     def gen_repro_code(self, rtf=None):
@@ -1345,7 +1366,7 @@ class DlgAg:
 
    #class DlgAg
 
-def show_menu(mn_content, x, y, ag=None, repro_to_file=None):
+def show_menu(mn_content, x, y, ag=None, cmd4all=None, repro_to_file=None, opts={}):
     """ mn_content      [{ cap:''
                          , tag:''
                          , en:T
@@ -1358,6 +1379,11 @@ def show_menu(mn_content, x, y, ag=None, repro_to_file=None):
         x, y            Screen coords for menu top-left corner
         repro_to_file   File name (w/o path) to write reprocode with only menu_proc 
     """
+    if cmd4all:
+        set_all_for_tree(mn_content, 'sub', 'cmd', cmd4all)       # All nodes have same cmd
+
+    c2m     = opts.get('c2m', False)
+    
     rfn     = tempfile.gettempdir()+os.sep+repro_to_file            if repro_to_file else None
     print(f(r'exec(open(r"{}", encoding="UTF-8").read())', rfn))    if rfn else 0
     repro   = lambda line,*args,mod='a':(
@@ -1382,8 +1408,10 @@ def show_menu(mn_content, x, y, ag=None, repro_to_file=None):
                  )
             repro("m{}=app.menu_proc(m{},app.MENU_ADD, caption='{}')", mid, mid_prn, it['cap'])
             if it.get('key', ''):
-                app.menu_proc(      mid, app.MENU_SET_HOTKEY            , command=it['key'])
-                repro("app.menu_proc(m{},app.MENU_SET_HOTKEY            , command='{}')", mid, it['key'])
+                key = it['key']
+                key = key.replace('Ctrl+', 'Meta+') if c2m else key
+                app.menu_proc(      mid, app.MENU_SET_HOTKEY            , command=key)
+                repro("app.menu_proc(m{},app.MENU_SET_HOTKEY            , command='{}')", mid, key)
                 
             if it.get('mark', '')[:1]=='c' or it.get('mark', '')[:1]=='r' or it.get('ch', False) or it.get('rd', False):
                 app.menu_proc(      mid, app.MENU_SET_CHECKED           , command=True)
@@ -1808,4 +1836,6 @@ ToDo
 [+][kv-kv][24mar19] ? Auto-restore col-widths for listview and same
 [+][kv-kv][24mar19] ? Add * as col-width value for listview and same
 [ ][kv-kv][26mar19] ? Chain for more then one event-callbacks
+[ ][kv-kv][29mar19] ! form handlers in update()
+[ ][at-kv][01apr19] Ctrl <-> Meta for MacOS
 '''
