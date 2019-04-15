@@ -1,13 +1,13 @@
 [info]
 title=Kvichans lib with wrapper over dlg_proc and more dialog tools
-desc=Utilities create and support dialog
+desc=Helper library to work with CudaText plugin dialogs
 type=cudatext-plugin
 subdir=cuda_kv_dlg
 homepage=https://github.com/kvichans/cuda_kv_dlg
 
 [item1]
 section=commands
-caption=Tuning vertical alignment for text into control pairs
+caption=Adjust vertical alignment of control pairs by text
 method=tuning_valigns
 menu=0
 

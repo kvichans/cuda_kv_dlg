@@ -54,7 +54,7 @@ _TYPE_ABBRS  = {
     ,'flbx': 'filter_listbox'
     ,'flvw': 'filter_listview'
     ,'bvel': 'bevel'
-    ,'pnel': 'panel'
+    ,'panl': 'panel'
     ,'grop': 'group'
     ,'splt': 'splitter'
     ,'pags': 'pages'
@@ -123,13 +123,17 @@ class DlgAg:
     ## Creators
     ###############
     
-            
+    
+    def __del__(self):
+        _dlg_proc(self.did, app.DLG_FREE)       if self.did else 0
     def __init__(self, ctrls, form, vals=None, fid=None, opts=None):
         """ Create dialog """
         pass;                   log4fun=0                       # Order log in the function
         # Fields
         self._retval= None                                      # Last event src-cid or user pointed val to return from show()
         self._hidden= True                                      # State of form
+        self._dockto= ''                                        # State of form
+        self._modal = None                                      # State of form
         self._onetime   = False                                 # Free form data on hide
         self._skip_free = False                                 # To ban to free form data
 
@@ -148,9 +152,7 @@ class DlgAg:
         self.gen_repro_code()
        #def __init__
     
-    def __del__(self):
-        _dlg_proc(self.did, app.DLG_FREE)       if self.did else 0
-
+    
     def show(self, on_exit=None, modal=True, onetime=True):
         """ Show the dialog 
                 on_exit     Call the function after dlg was hidden
@@ -161,16 +163,19 @@ class DlgAg:
                 vals        Last live val properties of all controls
         """
         pass;                   log4fun=0                       # Order log in the function
+        pass;                   log('modal, self._dockto, onetime, ed={}', (modal, self._dockto, onetime, ed)) if logif(log4fun,_log4mod) else 0
         if not self.did:
             raise ValueError('Dialog data is already destroyed (see "onetime" parameter)')
         
+        self._modal     = modal if not self._dockto else False
         self._retval    = None
         self._hidden    = False
         self._onetime   = onetime
 
-        ed_caller   = ed    if modal else None
+        ed_caller   = ed    if self._modal else None
 
         def when_close():
+            pass;               log("self.fattr('p')={}",self.fattr('p')) if logif(log4fun,_log4mod) else 0
             if not self.fattr('p'):         # Not docked
                 _form_acts('save', did=self.did
                           ,key4store=self.opts.get('form data key'))
@@ -178,9 +183,9 @@ class DlgAg:
                 self._cols_serv('save-ws', cid=cid)
             if callable(on_exit):
                 on_exit(self)
-            vals    = self.vals(live=True)  if modal else None
+            vals    = self.vals(live=True)  if self._modal else None
             if onetime:
-                if modal:
+                if self._modal:
                     _dlg_proc(self.did, app.DLG_FREE)
                 else:
                     app.timer_proc(app.TIMER_START_ONE, lambda tag:app.dlg_proc(int(tag)
@@ -190,22 +195,29 @@ class DlgAg:
                 self.did    = 0
         
             ed_to_focus = self.opts.get('on_exit_focus_to_ed', ed_caller)
+            pass;               log('ed_to_focus={}',ed_to_focus) if logif(log4fun,_log4mod) else 0
             if ed_to_focus:
                 ed_to_focus.focus()
+            elif not self._modal:
+                ed.focus()
             
+            self._modal = None
             return (self._retval, vals)
            #def when_close
 
-        if modal:
-            pass;               log('modal') if logif(log4fun,_log4mod) else 0
+        if self._modal:
+            pass;               log('as modal') if logif(log4fun,_log4mod) else 0
+#           self._modal = True
             app.dlg_proc(self.did, app.DLG_SHOW_MODAL)
             return   when_close()
         # Nonmodal
         app.dlg_proc(self.did, app.DLG_PROP_SET
                     ,prop=dict(on_close=lambda idd, idc=0, data='':
                      when_close()))
-        pass;                   log('modal') if logif(log4fun,_log4mod) else 0
+        pass;                   log('as nonmodal') if logif(log4fun,_log4mod) else 0
+#       self._modal = False
         app.dlg_proc(self.did, app.DLG_SHOW_NONMODAL)
+        self.activate()
         return (None, None)
        #def show
 
@@ -379,17 +391,14 @@ class DlgAg:
         if upds is False:
             pass;              #log('to stop ev') if logif(log4fun,_log4mod) else 0
             return False                                        # False to cancel the current event
-#       if isinstance(upds, tuple) or isinstance(upds, list) :  # Allow to use list of upd data
         if likeslist(upds):                                     # Allow to use list of upd data
             pass;              #log('to many upd') if logif(log4fun,_log4mod) else 0
             for upd in upds:
-                if self.update(upd, retval, opts=opts) is None:
-                    break
+                self.update(upd, retval, opts=opts)
+                if self._hidden:    break
             return
         cupds   = upds.get('ctrls',  [])
-#       cupds   = odct(cupds)       if isinstance(cupds, tuple) or isinstance(cupds, list)  else cupds
         cupds   = odct(cupds)       if likeslist(cupds)                                     else cupds
-#       cupds   = odict(cupds)      if isinstance(cupds, tuple) or isinstance(cupds, list)  else cupds
         pass;                   log('cupds={}',(cupds)) if logif(log4fun,_log4mod) else 0
         vals    = upds.get('vals', {})
         form    = upds.get('form', {})
@@ -448,7 +457,6 @@ class DlgAg:
         # Check cid/tid/fid in (ctrls, form, vals, fid) to exist into mem_ctrls
         if 'skip checks'!='skip checks':    return
         
-#       if isinstance(ctrls, tuple) or isinstance(ctrls, list):
         if likeslist(ctrls):
             cids    = [cid_cnt[0] for cid_cnt in ctrls]
             cids_d  = [cid for cid in cids if cids.count(cid)>1]
@@ -487,10 +495,7 @@ class DlgAg:
         """
         pass;                   log4fun=0                       # Order log in the function
         #NOTE: DlgAg init
-#       self.ctrls  = odct(ctrls)   if type(ctrls) in (list, tuple)                         else ctrls.copy()
-#       self.ctrls  = odct(ctrls)   if isinstance(ctrls, tuple) or isinstance(ctrls, list)  else ctrls.copy()
         self.ctrls  = odct(ctrls)   if likeslist(ctrls)                                     else ctrls.copy()
-#       self.ctrls  = odict(ctrls)  if isinstance(ctrls, tuple) or isinstance(ctrls, list)  else ctrls.copy()
         self.form   = form.copy()
         fid         = fid           if fid else form.get('fid', form.get('focused'))    # focused?
         
@@ -751,29 +756,30 @@ class DlgAg:
 
         if 'val' in cfg_ctrl        and opts.get('prepare val', True):
             in_val  = cfg_ctrl['val']
+            def list_to_list01(lst):
+                return list(('1' if v=='1' or v is True else '0') 
+                            for v in lst)
             if False:pass
             elif tp=='memo':
                 # For memo: "\t"-separated lines (in lines "\t" must be replaced to chr(3)) 
                 pass;           log("tp,in_val={}",(tp,in_val)) if logif(log4fun,_log4mod) else 0
-#               if isinstance(in_val, list):
                 if likeslist(in_val):
                     in_val = '\t'.join([v.replace('\t', chr(3)) for v in in_val])
                 else:
                     in_val = in_val.replace('\t', chr(3)).replace('\r\n','\n').replace('\r','\n').replace('\n','\t')
                 pass;           log("tp,in_val={}",(tp,in_val)) if logif(log4fun,_log4mod) else 0
-#           elif tp=='checkgroup' and isinstance(in_val, list):
             elif tp=='checkgroup' and likeslist(in_val):
                 # For checkgroup: ","-separated checks (values "0"/"1") 
-                in_val = ','.join(in_val)
-            elif tp in ['checklistbox', 'checklistview'] and isinstance(in_val, tuple):
+                in_val = ','.join(list_to_list01(in_val))
+            elif tp in ['checklistbox', 'checklistview'] and likeslist(in_val):
                 # For checklistbox, checklistview: index+";"+checks 
-                in_val = ';'.join( (str(in_val[0]), ','.join( in_val[1]) ) )
+                in_val = ';'.join( (str(in_val[0]), ','.join(list_to_list01(in_val[1])) ) )
             c_pr['val']     = in_val
 
         if 'items' in cfg_ctrl        and opts.get('prepare items', True):
             items   = cfg_ctrl['items']
             pass;               log("tp,items={}",(tp,items)) if logif(log4fun,_log4mod) else 0
-            if isinstance(items, str):
+            if likesstr(items):
                 pass
             elif tp in ['listview', 'checklistview']:
                 # For listview, checklistview: "\t"-separated items.
@@ -793,7 +799,7 @@ class DlgAg:
             cols    = cfg_ctrl.get('cols', cfg_ctrl.get('columns'))
             cols    = cols if cols else self.cattr(cid, 'cols')
             cfg_ctrl['columns'] = cols
-            if isinstance(cols, str):
+            if likesstr(cols):
                 pass
             else:
                 if 'cols_ws' in cfg_ctrl:
@@ -820,7 +826,6 @@ class DlgAg:
                                   )
                 pass;          #log('cols={}',repr(cols))
             c_pr['columns'] = cols
-            pass;              #log('isinstance(cfg_ctrl[columns], str)={}',(isinstance(cfg_ctrl['columns'], str)))
 
         return c_pr
        #def _prepare_vl_it_cl
@@ -834,7 +839,6 @@ class DlgAg:
         if False:pass
         elif tp=='memo':
             # For memo: "\t"-separated lines (in lines "\t" must be replaced to chr(3)) 
-#           if isinstance(old_val, list):
             if likeslist(old_val):
 #               new_val = [v.replace(chr(3), '\t') for v in liv_val.split('\t')]
                 new_val = [v.replace(chr(2), '\t')              ##!! Wait core fix
@@ -843,12 +847,11 @@ class DlgAg:
             else:
                 new_val = liv_val.replace('\t','\n').replace(chr(3), '\t')
                #liv_val = old_val.replace('\t', chr(3)).replace('\r\n','\n').replace('\r','\n').replace('\n','\t')
-#       elif tp=='checkgroup' and isinstance(old_val, list):
         elif tp=='checkgroup' and likeslist(old_val):
             # For checkgroup: ","-separated checks (values "0"/"1") 
             new_val = liv_val.split(',')
            #in_val = ','.join(in_val)
-        elif tp in ['checklistbox', 'checklistview'] and isinstance(old_val, tuple):
+        elif tp in ['checklistbox', 'checklistview'] and likeslist(old_val):
             new_val = liv_val.split(';')
             new_val = (new_val[0], new_val[1].split(','))
            #liv_val = ';'.join(old_val[0], ','.join(old_val[1]))
@@ -866,7 +869,7 @@ class DlgAg:
         tp      = self.ctrls[cid]['type']
         old_val = self.ctrls[cid].get(attr, defv)
         pass;                  #log('cid, attr, isinstance(old_val, str)={}',(cid, attr, isinstance(old_val, str)))
-        if isinstance(old_val, str):
+        if likesstr(old_val):
             # No need parsing - config was by string
             return liv_val
         new_val = liv_val
@@ -1209,27 +1212,45 @@ class DlgAg:
         return app.dlg_proc(self.did, app.DLG_FOCUS)
     
     
-    def dock(self, ag_parent=None, side='b', undock=False):
+    def dock(self, side='b', undock=False, ag_parent=None):
         """ [Un]Dock the form to the side of form/window.
+            side        'l', 'r', 't', 'b' to dock to the side
+                        '' to undock
+            undock      Undock form (as side='')
             ag_parent   Other form agent, None - main app window
-            side        'l', 'r', 't', 'b'
-            undock      Undock form
         """
-        if undock:
+        pass;                   log4fun=0
+        undock  = undock if side        else True               # to use only side
+        side    = side   if not undock  else ''                 # to use only side
+        pass;                   log("side, undock, ag_parent={}",(side, undock, ag_parent)) if logif(log4fun,_log4mod) else 0
+        if side==self._dockto:
+            pass;               log("skip as already") if logif(log4fun,_log4mod) else 0
+            return 
+        if side and self._modal is True:
+            pass;               log("skip as modal") if logif(log4fun,_log4mod) else 0
+            return 
+        self._dockto= side
+        if not side:
             app.dlg_proc(self.did, app.DLG_UNDOCK)
-            fpr     = {k:v for k,v in self.form.items() if k in ('border', 'cap')}
-            fpr     = _form_acts('move', fprs=fpr               # Move and (maybe) resize
-                                , key4store=self.opts.get('form data key'))
-            _dlg_proc(self.did, app.DLG_PROP_SET, prop=fpr)     # Push to live
+            if not self._hidden:
+                fpr     = {k:v for k,v in self.form.items() if k in ('border', 'cap')}
+                fpr     = _form_acts('move', fprs=fpr               # Move and (maybe) resize
+                                    , key4store=self.opts.get('form data key'))
+                _dlg_proc(self.did, app.DLG_PROP_SET, prop=fpr)     # Push to live
         else:
-            _form_acts('save', did=self.did
-                      ,key4store=self.opts.get('form data key'))
+            if not self._hidden:
+                _form_acts('save', did=self.did
+                          ,key4store=self.opts.get('form data key'))
             side    = side.upper() if side in ('l', 'r', 't', 'b') else 'B'
-            self.form['border'] = self.fattr('border')
+            self.form['border'] = self.fattr('border')              # Save to use on undock
             app.dlg_proc(self.did, app.DLG_DOCK
                         ,index=(ag_parent.did if ag_parent else 0)
                         ,prop=side)
        #def dock
+    
+    
+    def islived(self):
+        return app.dlg_proc(self.did, app.DLG_PROP_GET) is not None
     
     
     def fhandle(self):
@@ -1284,7 +1305,7 @@ class DlgAg:
         pass;                   log4fun=0                       # Order  log in the function
         rtf     = self.opts.get('gen_repro_to_file', False) if rtf is None else rtf
         if not rtf: return 
-        rerpo_fn= tempfile.gettempdir()+os.sep+(rtf if isinstance(rtf, str) else 'repro_dlg_proc.py')
+        rerpo_fn= tempfile.gettempdir()+os.sep+(rtf if likesstr(rtf) else 'repro_dlg_proc.py')
         print(f(r'exec(open(r"{}", encoding="UTF-8").read())', rerpo_fn))
 
         l       = '\n'
@@ -1364,6 +1385,17 @@ class DlgAg:
         return self
        #def gen_repro_code
 
+    def __str__(self):
+        return '<DlgAg id={}/{} cap="{}" #ctrls={} fid={} vals={}>'.format(
+            self.did,   id(self),
+            self.fattr('cap', ''),
+            len(self.ctrls),
+            self.focused(),
+            self.vals(),
+            )
+
+    def __repr__(self):
+        return self.__str__()
    #class DlgAg
 
 def show_menu(mn_content, x, y, ag=None, cmd4all=None, repro_to_file=None, opts={}):
@@ -1520,6 +1552,8 @@ def _os_scale(id_action, prop=None, index=-1, index2=-1, name=''):
     pass;                       log4fun=0                       # Order log in the function
     pass;                      #return prop
     pass;                      #log('prop={}',({k:prop[k] for k in prop if k in ('x','y')}))
+    if not prop:
+        return prop
     ppi     = app.app_proc(app.PROC_GET_SYSTEM_PPI, '')
     if ppi==96:
         return prop
@@ -1837,5 +1871,5 @@ ToDo
 [+][kv-kv][24mar19] ? Add * as col-width value for listview and same
 [ ][kv-kv][26mar19] ? Chain for more then one event-callbacks
 [ ][kv-kv][29mar19] ! form handlers in update()
-[ ][at-kv][01apr19] Ctrl <-> Meta for MacOS
+[+][at-kv][01apr19] Ctrl <-> Meta for MacOS
 '''
