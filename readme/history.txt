@@ -1,3 +1,10 @@
+1.1.01 2019-07-01
+added: 'dlg_list_input' to show dialog to choose from a list
+added: special processing for 'on_close_query'
+added: new attribute 'ivals' to get/set ready value not index of shown list
+added: 'fit_statusbar' - helper to statusbar_proc
+fixed: 'negative_coords_reflect' in control into 'panel'
+
 0.9.02 2019-05-22
 init: beta
 

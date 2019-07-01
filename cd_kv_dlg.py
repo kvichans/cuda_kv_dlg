@@ -2,7 +2,7 @@
 Authors:
     Andrey Kvichansky    (kvichans on github.com)
 Version:
-    '0.9.01 2019-03-28'
+    '1.1.01 2019-07-01'
 Content
     See github.com/kvichans/cuda_kv_dlg/wiki
 ToDo: (see end of file)
@@ -535,6 +535,8 @@ class DlgAg:
                                ,opts={'_skip_ctrls_upd':True})  # Agent acts: stretch column(s), ...
                 self._skip_free = (event=='on_resize')          # Ban to close dlg by some events (on_resize,...)
                 upds    = u_callbk(self, key, data)
+                if event=='on_close_query':                     # No upd, only bool about form close
+                    return upds
                 return self.update(upds)
             return form_callbk
             
@@ -709,15 +711,21 @@ class DlgAg:
             t           = bas_cnt.get('y', 0) + _fit_top_by_env(cnt_ty, bas_ty)
             cnt['y']    = t                                     # 'tid' kills 'y'
         
-        if reflect: #NOTE: reflect
+        if reflect and (
+            cnt.get('x', 0)<0 or
+            cnt.get('r', 0)<0 or
+            cnt.get('y', 0)<0 or
+            cnt.get('b', 0)<0   ): #NOTE: reflect
             def do_reflect(cnt_, k, pval):
                 if 0>cnt_.get(k, 0):
                     pass;       log__('cid, k, pval, cnt_={}',(cid, k, pval, cnt_)      ,__=(log4fun,_log4mod))
                     cnt_[k]    = pval + cnt_[k]
                     pass;       log__('cnt_={}',(cnt_)      ,__=(log4fun,_log4mod))
+            pass;              #log('cid,cnt={}',(cid,cnt))
             prnt    = cnt.get('p', self.form)
-            prnt_w  = prnt.get('w', 0) 
-            prnt_h  = prnt.get('h', 0)
+            prnt    = self.ctrls[prnt] if likesstr(prnt) else prnt  ##?? Only form/[panel/]ctrl
+            prnt_w  = prnt.get('w', self.form.get('w', 0))          ##?? Only form/[panel/]ctrl
+            prnt_h  = prnt.get('h', self.form.get('h', 0))          ##?? Only form/[panel/]ctrl
             pass;               log__('prnt={}',(prnt)      ,__=(log4fun,_log4mod))
             pass;               log__('prnt_w,prnt_h={}',(prnt_w,prnt_h)      ,__=(log4fun,_log4mod))
             pass;               log__('cnt={}',(cnt)      ,__=(log4fun,_log4mod))
@@ -773,10 +781,13 @@ class DlgAg:
                 pass;           log__("tp,in_val={}",(tp,in_val)      ,__=(log4fun,_log4mod))
             elif tp=='checkgroup' and likeslist(in_val):
                 # For checkgroup: ","-separated checks (values "0"/"1") 
-                in_val = ','.join(list_to_list01(in_val))
+                in_val  = ','.join(list_to_list01(in_val))
             elif tp in ['checklistbox', 'checklistview'] and likeslist(in_val):
                 # For checklistbox, checklistview: index+";"+checks 
-                in_val = ';'.join( (str(in_val[0]), ','.join(list_to_list01(in_val[1])) ) )
+                in_val  = ';'.join( (str(in_val[0]), ','.join(list_to_list01(in_val[1])) ) )
+            elif tp in ['listbox', 'combo_ro'] and 'ivals' in cfg_ctrl and cfg_ctrl['ivals']:
+                ivals   = cfg_ctrl['ivals']
+                in_val  = ivals.index(in_val) if in_val in ivals else -1
             c_pr['val']     = in_val
 
         if 'items' in cfg_ctrl        and opts.get('prepare items', True):
@@ -839,6 +850,8 @@ class DlgAg:
         tp      = self.ctrls[name]['type']
         old_val = self.ctrls[name].get('val', defv)
         new_val = liv_val
+        ivals   = self.ctrls[name].get('ivals')
+
         if False:pass
         elif tp=='memo':
             # For memo: "\t"-separated lines (in lines "\t" must be replaced to chr(3)) 
@@ -858,6 +871,9 @@ class DlgAg:
             new_val = liv_val.split(';')
             new_val = (new_val[0], new_val[1].split(','))
            #liv_val = ';'.join(old_val[0], ','.join(old_val[1]))
+        elif tp in ['listbox', 'combo_ro'] and ivals:
+            new_val = int(new_val)
+            new_val = ivals[new_val] if 0<=new_val<len(ivals) else None
         elif isinstance(old_val, bool): 
             new_val = liv_val=='1'
         elif tp=='listview':
@@ -945,7 +961,7 @@ class DlgAg:
         # Copy smth to props
         if 'props' in cnt:
             pass
-        elif tp=='label' and 'cap' in cnt and cnt['cap'][0]=='>':       # cap='>smth' -> cap='smth', props='1' (r-align)
+        elif tp=='label' and cnt.get('cap', '').startswith('>'):        # cap='>smth' -> cap='smth', props='1' (r-align)
             cnt['cap']  = cnt['cap'][1:]
             cnt['props']= '1'
         elif tp=='label' and    cnt.get('ralign'):                      # ralign -> props
@@ -1302,6 +1318,22 @@ class DlgAg:
         
         return show_menu(mn_content, x, y, self, repro_to_file, opts=dict(c2m=self._c2m))
        #def show_menu
+
+    def fit_statusbar(self, cid, opts):
+        stproc  = app.statusbar_proc
+        stbr    = self.chandle(cid)
+        for tag, ops in opts.items():
+            stproc(     stbr, app.STATUSBAR_ADD_CELL            , tag=tag)
+            if ops.get('sz', 0):
+                stproc( stbr, app.STATUSBAR_SET_CELL_SIZE       , tag=tag, value=ops['sz'])
+            else:
+                stproc( stbr, app.STATUSBAR_SET_CELL_AUTOSTRETCH, tag=tag, value=True)
+            if ops.get('a', ''):
+                stproc( stbr, app.STATUSBAR_SET_CELL_ALIGN      , tag=tag, value=ops['a'])
+            if ops.get('h', ''):
+                stproc( stbr, app.STATUSBAR_SET_CELL_HINT       , tag=tag, value=ops['h'])
+        return stbr
+       #def fit_statusbar
 
     def gen_repro_code(self, rtf=None):
         # Make repro-code has only core API calls
@@ -1821,6 +1853,50 @@ def dlg_tuning_valigns():
     ag.show()    #NOTE: dlg_valign
     return changed
    #def tuning_valigns
+
+######################################
+#NOTE: Ready dialogs
+######################################
+
+def dlg_list_input(title, choices, val=None, vals=None, label=None, opts={}):
+    """ Shows modal dialog to select one of choices value. 
+        Params
+            title   Caption of dialog
+            label   Label over combobox (if is)
+            choices List of visible string to select
+            val     Start selection (index for choices or item from vals)
+            vals    List of values.
+                    If is input/output val must/will be in the list
+            opts    Misc options
+                        'w'     width of combobox
+        Return        
+                    Value from vals (if is)
+                    Index of choices
+                    None if cancelled.
+    """
+    d       = dict
+    w       = opts.get('w', 200)
+    wlbl    = bool(label)
+    label   = str(label)
+    dh      = 28 if wlbl else 0
+    ret,vls = DlgAg(
+                 ctrls  =[
+    ('labl',d(tp='labl'     ,y= 5   ,x=  5      ,w=w    ,cap=label      ,vis=wlbl   ,a='r>')),
+    ('cmbr',d(tp='cmbr'     ,y= 5+dh,x=  5      ,w=w    ,items=choices
+                                                        ,ivals=vals     ,val=val    ,a='r>')),
+    ('okok',d(tp='bttn'     ,y=35+dh,x=-65      ,w=60   ,cap='OK'       ,def_bt=True    
+                                                                        ,on=CB_HIDE ,a='>>')),
+               ],form   =d(  h=65+dh,h_max=65+dh,w=w+10 ,cap=title                  ,frame='resize')
+                ,fid    ='cmbr'
+                ,opts   =d(negative_coords_reflect=True)
+                ).show()
+    return vls['cmbr']  if ret else None
+   #def dlg_list_input
+
+
+
+
+
 
 if __name__ == '__main__' :
     # To start the tests run in Console

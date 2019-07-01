@@ -1,5 +1,5 @@
 [info]
-version=0.9.01
+version=1.1.01
 title=Kvichans lib with wrapper over dlg_proc and more dialog tools
 desc=Helper library to work with CudaText plugin dialogs
 type=cudatext-plugin

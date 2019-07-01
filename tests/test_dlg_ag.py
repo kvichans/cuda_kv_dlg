@@ -2,6 +2,7 @@ import unittest
 
 import os, tempfile, itertools
 from cudatext       import *
+from cudax_lib      import *
 from cuda_kv_base   import *
 from cuda_kv_dlg    import *
 
@@ -10,8 +11,11 @@ pass;                          #_ONLY = ['ag_1']
 pass;                          #_ONLY = ['ag_pos']
 pass;                          #_ONLY = ['ag_cattr']
 pass;                          #_ONLY = ['ag_cols']
+pass;                           _ONLY = ['ag_list_input']
+pass;                          #_ONLY = ['ag_ed_tree']
+pass;                          #_ONLY = ['ag_panels']
 pass;                          #_ONLY = ['ag_anchor']
-pass;                           _ONLY = ['ag_meta']
+pass;                          #_ONLY = ['ag_meta']
 pass;                          #_ONLY = ['ag_menu']
 pass;                          #_ONLY = ['ag_repro']
 pass;                          #_ONLY = ['ag_dict']
@@ -68,9 +72,9 @@ class TestDlgAg(unittest.TestCase):
     ,('b1',dict(tp='bttn',cap='Re&name me' ,x= 0 ,y=  0    ,w=200  ,on=do_acts))
     ,('l1',dict(tp='labl',cap='>he&re'     ,x= 0 ,tid='e1' ,w= 50))
     ,('e1',dict(tp='edit',val=val4edit     ,x=50 ,y= 30    ,w=150))
-    ,('b2',dict(tp='bttn',cap='Sh&ort me'  ,x= 0 ,y= 60    ,w=200  ,on=do_acts))
+    ,('b2',dict(tp='bttn',cap='Sh&ort me'  ,x= 0 ,y= 60    ,w=200  ,on=do_acts  ,color=html_color_to_int('#fff')))
     ,('b3',dict(tp='bttn',cap='A&sk,Close' ,x= 0 ,y= 90    ,w=200  ,on=do_acts))
-    ,('cl',dict(tp='bttn',cap='Close'      ,x= 0 ,y=120    ,w=200  ,on=CB_HIDE   ,def_bt=1))
+    ,('cl',dict(tp='bttn',cap='Close'      ,x= 0 ,y=120    ,w=200  ,on=CB_HIDE  ,def_bt=1))
                   ][1:]
         ,   form=dict(cap=test_str               ,h=150    ,w=200)
         ,   fid='e1'    # Start focus
@@ -149,18 +153,21 @@ class TestDlgAg(unittest.TestCase):
         DlgAg(
             ctrls=[0
     ,('b1',dict(tp='bttn',cap='Click me to test attrs'    
-                                            ,x=10   ,w=100  ,y=  5              ,a='--' ,au=True   ,def_bt=True    ,on=do_acts))
-    ,('l1',dict(tp='labl',cap='autosized text'       ,w=100  ,y= 30              ,a='--' ,au=True))
-    ,('m1',dict(tp='memo'                    ,x=10   ,w=180  ,y= 60      ,h=60   ,a='r>'         ))
-    ,('v1',dict(tp='livw',items=its          ,x=10   ,w=180  ,y=130      ,h=80   ,a='r>' ,grid=True  ))
+                                             ,x=10   ,w=100  ,y=  5              ,a='--' ,au=True   ,def_bt=True   ,on=do_acts))
+    ,('l1',dict(tp='labl',cap='autosized text'       ,w=100  ,y= 30              ,a='--' ,au=True   ))
+    ,('m1',dict(tp='memo'                    ,x=10   ,w=180  ,y= 60      ,h=60   ,a='r>'            ))
+    ,('v1',dict(tp='livw',items=its          ,x=10   ,w=180  ,y=130      ,h=80   ,a='r>' ,grid=True ))
     ,('b2',dict(tp='bttn',cap='Resize form'  ,x=10   ,w=100  ,y=225              ,a='--'                            ,on=do_acts))
+    ,('cl',dict(tp='clbx',items=['a','b']    ,x=10   ,w=180  ,y=250      ,h=80   ,a='r>'            ))
                   ][1:]
-        ,   form=odct(cap=test_str                   ,w=200              ,h=300      
+        ,   form=odct(cap=test_str                   ,w=200              ,h=400      
                      ,on_resize=on_resize
                      )
         ,   vals=dict(
                       m1=mv,
                       v1=1,
+#                     cl=[1,['1','0']]
+                      cl=[1,[True,False]]
                      )
         ,   fid='b1'
         ).show()
@@ -249,21 +256,134 @@ class TestDlgAg(unittest.TestCase):
 
 
     ##############################
-    def test_ag_anchor(self):
-        test_str= 'test_ag_anchor'
+    def test_ag_panels(self):
+        test_str= 'test_ag_panels'
         if                      _ONLY and test_str[5:] not in _ONLY: return
         def on_resize(ag,k,d):
             print('on_resize '+test_str)
 #           return []
         DlgAg(
             ctrls=[0
+    ,('bt1',dict(tp='bttn',cap='out button'             ,x= 0   ,au=True,y=  0              ))
+    ,('pn1',dict(tp='panl'                              ,x=10   ,w=180  ,y= 30  ,h=100  ,border=True))
+    ,('bp1',dict(tp='bttn',cap='button in p1'   ,p='pn1',x=30   ,au=True,y=  0              ))
+    ,('pn2',dict(tp='panl'                      ,p='pn1',x=10   ,w=160  ,y= 30  ,h= 50  ,border=True))
+    ,('bp2',dict(tp='bttn',cap='button in p2'   ,p='pn2',x=60   ,au=True,y=  0              ))
+                  ][1:]
+        ,   form=dict(cap=test_str                              ,w=200          ,h=160
+#                    ,on_resize=on_resize
+#                    ,frame='resize'
+                     )
+#       ,   fid='e1'    # Start focus
+#       ).gen_repro_code('test_repro_anchor.py').show()
+        ).show()
+        self.assertTrue(True)
+
+
+    ##############################
+    def test_ag_list_input(self):
+        test_str= 'test_ag_list_input'
+        if                      _ONLY and test_str[5:] not in _ONLY: return
+#       ret     = dlg_list_input(
+#           title   = 'Test'
+#       ,   choices = ['s1', 's2']
+#       )
+#       pass;                   log("ret={}",(ret))
+#       ret     = dlg_list_input(
+#           title   = 'Test'
+#       ,   choices = ['s1', 's2', 's3']
+#       ,   val     = 1
+#       ,   vals    = None
+#       ,   label   = 'label'
+#       )
+#       pass;                   log("ret={}",(ret))
+        ret     = dlg_list_input(
+            title   = 'Test'
+        ,   choices = ['s1', 's2', 's3']
+        ,   val     = 'v2'
+        ,   vals    = ['v1', 'v2', 'v3']
+        ,   label   = 'label'
+        )
+        pass;                   log("ret={!r}",(ret))
+
+    ##############################
+    def test_ag_ed_tree(self):
+        test_str= 'test_ag_ed_tree'
+        if                      _ONLY and test_str[5:] not in _ONLY: return
+        def_src_py="""
+def top():
+    def sub():
+        print('sub')
+    print('top')
+    sub()
+top()
+""".strip()
+        sed = None
+        def tree(ag):
+            nonlocal sed
+#           sed = app.Editor(ag.chandle('src'))
+            tid = ag.chandle('tre')
+            
+            ok = sed.action(EDACTION_CODETREE_FILL, tid)
+#           ok = sed.codetree(tid, app.CODETREE_FILL)
+            pass;               log("tid, sed, CODETREE_FILL={}",(tid, sed, ok))
+            nodes = app.tree_proc(tid, app.TREE_ITEM_ENUM, 0)
+            pass;               log("root nodes={}",(nodes))
+        def on_load(ag,k,d):
+            nonlocal sed
+#           sed = app.Editor(ag.chandle('src'))
+            fn = ag.val('ed1')
+            sed.set_text_all(open(fn).read() if os.path.isfile(fn) else def_src_py)
+            
+            tree(ag)
+            return []
+        ag=DlgAg(
+            ctrls=[0
+    ,('ed1',dict(tp='edit',val='t.py'   ,x=  0  ,w=150  ,y=  0          ,a='r>'                 ))
+    ,('bt1',dict(tp='bttn',cap='Load'   ,x=155  ,w= 40  ,tid='ed1'      ,a='>>'     ,on=on_load ))
+    ,('src',dict(tp='edtr'              ,x=  0  ,w=200  ,y= 30  ,h=200  ,a='r>b.'               ))
+    ,('tre',dict(tp='trvw'              ,x=  0  ,w=200  ,y=240  ,h= 50  ,a='r>..'               ))
+                  ][1:]
+        ,   form=dict(cap=test_str              ,w=200          ,h=300
+                     ,frame='resize'
+                     )
+        ,   fid='bt1'    # Start focus
+#       ).gen_repro_code('test_ed_tree2.py'
+        )
+        sed = app.Editor(ag.chandle('src'))
+        sed.set_prop(app.PROP_GUTTER_ALL        , False)
+        sed.set_prop(app.PROP_MINIMAP           , False)
+        sed.set_prop(app.PROP_MICROMAP          , False)
+        sed.set_prop(app.PROP_LAST_LINE_ON_TOP  , False)
+        sed.set_prop(app.PROP_MARGIN            , 2000)
+        sed.set_prop(app.PROP_GUTTER_ALL        , True)
+        sed.set_prop(app.PROP_GUTTER_NUM        , True)
+        sed.set_prop(app.PROP_GUTTER_STATES     , False)
+        sed.set_prop(app.PROP_GUTTER_FOLD       , False)
+        sed.set_prop(app.PROP_GUTTER_BM         , False)
+        sed.set_text_all(def_src_py)
+        sed.set_prop(app.PROP_LEXER_FILE        , 'Python')
+        tree(ag)
+        ag.show()
+        self.assertTrue(True)
+
+
+    ##############################
+    def test_ag_anchor(self):
+        test_str= 'test_ag_anchor'
+        if                      _ONLY and test_str[5:] not in _ONLY: return
+        def on_resize(ag,k,d):
+            print('on_resize '+test_str)
+#           return []                                           # on_resize CAN return None - ag ignores
+        DlgAg(
+            ctrls=[0
     ,('b1',dict(tp='bttn',cap='def'     ,x=  0  ,w=100  ,y=  0              ))
-#   ,('l1',dict(tp='labl',cap='>def'    ,x=110  ,w= 40  ,tid='e1'           ))
-#   ,('e1',dict(tp='edit',val='r>'      ,x=150  ,w= 50  ,y=  0              ,a='r>'))
-#   ,('b3',dict(tp='bttn',cap='--'     ,_x=  0 ,_w=100  ,y= 30              ,a='--'     ,au=True))
-#   ,('m1',dict(tp='memo',val='r>b.'    ,x=  0  ,w=100  ,y= 60      ,h=60   ,a='r>b.'   ,ro_mono_brd='1,0,1'))
-#   ,('m2',dict(tp='memo',cap='>>||'    ,x=110  ,w= 90              ,h=50   ,a='>>||'   ,ro_mono_brd='1,1,0'))
-#   ,('cl',dict(tp='bttn',cap='>>..'    ,x= 90  ,w=110  ,y=130              ,a='>>..'))
+    ,('l1',dict(tp='labl',cap='>def'    ,x=110  ,w= 40  ,tid='e1'           ))
+    ,('e1',dict(tp='edit',val='r>'      ,x=150  ,w= 50  ,y=  0              ,a='r>'))
+    ,('b3',dict(tp='bttn',cap='--'     ,_x=  0 ,_w=100  ,y= 30              ,a='--'     ,au=True))
+    ,('m1',dict(tp='memo',val='r>b.'    ,x=  0  ,w=100  ,y= 60      ,h=60   ,a='r>b.'   ,ro_mono_brd='1,0,1'))
+    ,('m2',dict(tp='memo',cap='>>||'    ,x=110  ,w= 90              ,h=50   ,a='>>||'   ,ro_mono_brd='1,1,0'))
+    ,('cl',dict(tp='bttn',cap='>>..'    ,x= 90  ,w=110  ,y=130              ,a='>>..'))
                   ][1:]
         ,   form=dict(cap=test_str              ,w=200  ,h=160
                      ,on_resize=on_resize
@@ -381,9 +501,9 @@ class TestDlgAg(unittest.TestCase):
     ,('b1',dict(tp='bttn',cap='Re&name me' ,x=0  ,y=  0    ,w=200))
     ,('l1',dict(tp='labl',cap='>he&re'     ,x=0  ,tid='e1' ,w= 50))
     ,('e1',dict(tp='edit',val='Edit me'    ,x=50 ,y= 30    ,w=150))
-    ,('b2',dict(tp='bttn',cap='Sh&ort me'  ,x=0  ,y= 60    ,w=200))
+    ,('b2',dict(tp='bttn',cap='Sh&ort me'  ,x=0  ,y= 60    ,w=200   ,color=html_color_to_int('#fff')))
     ,('b3',dict(tp='bttn',cap='A&sk,Close' ,x=0  ,y= 90    ,w=200))
-    ,('cl',dict(tp='bttn',cap='Close'      ,x=0  ,y=120    ,w=200,def_bt=1))
+    ,('cl',dict(tp='bttn',cap='Close'      ,x=0  ,y=120    ,w=200   ,def_bt=1))
                   ][1:]
         ,   form=dict(cap=test_str               ,h=150    ,w=200)
         ,   fid='e1'    # Start focus
@@ -481,7 +601,7 @@ class TestDlgAg(unittest.TestCase):
 #                               ,opts=dict(gen_repro_to_file='test_repro_dock_k.py')
         )
 #       agK.dock(side='t')
-#       agK.dock(agP)
+#       agK.dock(ag_parent=agP)
         agK.show(modal=False)
 #       agK.show(modal=False)   # Unfortunately need
 #       agP.show()
