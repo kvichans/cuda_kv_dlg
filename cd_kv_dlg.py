@@ -245,8 +245,10 @@ class DlgAg:
         """ Return form properties """
         pr  = _dlg_proc(self.did, app.DLG_PROP_GET) if live else    self.form
         return pr      if not attrs else \
-               {attr:(self.focused(live) if attr in ('focused', 'fid') else pr.get(attr)) 
-                    for attr in attrs}
+               odict([(attr,(self.focused(live) if attr in ('focused', 'fid') else pr.get(attr)))
+                      for attr in attrs])
+#              {attr:(self.focused(live) if attr in ('focused', 'fid') else pr.get(attr)) 
+#                   for attr in attrs}
        #def fattrs
 
     def _cattr(self, lpr, cid, attr, attr_=None, defv=None):
@@ -1341,7 +1343,7 @@ class DlgAg:
         rtf     = self.opts.get('gen_repro_to_file', False) if rtf is None else rtf
         if not rtf: return 
         rerpo_fn= tempfile.gettempdir()+os.sep+(rtf if likesstr(rtf) else 'repro_dlg_proc.py')
-        print(f(r'exec(open(r"{}", encoding="UTF-8").read())', rerpo_fn))
+        print(f('exec(open(r"{}", encoding="UTF-8").read())', rerpo_fn))
 
         l       = '\n'
         cattrs  = [  ('type', 'tag', 'act')
@@ -1373,8 +1375,8 @@ class DlgAg:
                 out     += afix + f('"{}":(lambda idd,idc,data:print("{}"))', k, k)
             out         += '}'
             return out
-        srp     =    ''
-        srp    +=    'idd=dlg_proc(0, DLG_CREATE)'
+        srp     =    f('# >>> exec(open(r"{}", encoding="UTF-8").read())', rerpo_fn)
+        srp    += l+ 'idd=dlg_proc(0, DLG_CREATE)'
         srp    += l
         cids    = []
         for idC in range(app.dlg_proc(self.did, app.DLG_CTL_COUNT)):
